@@ -7,6 +7,15 @@ The goal is not to implement MACI. The goal is to show that peer-prediction
 reward computation can be verified over hidden reports, and that a Solidity
 payout contract can be gated by such a proof.
 
+## Full MACI Baseline
+
+The experimental real-MACI baseline is recorded in `maci_baseline.md`.
+It uses the official MACI repository at pinned commit
+`22106c8a2015f18709a32208ad2ad40b6f3fa8a5`, runs real local MACI signup,
+encrypted vote publication, message processing, tally proof generation, on-chain
+proof submission, and tally verification, then selects the unmodified-MACI
+reward sidecar path.
+
 ## Milestones
 
 ### M0. Scope
