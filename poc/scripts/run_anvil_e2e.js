@@ -7,6 +7,7 @@ const { ethers } = require("ethers");
 
 const RPC_URL = process.env.RPC_URL || "http://127.0.0.1:8545";
 const PRIVATE_KEY = process.env.PRIVATE_KEY || "";
+const EXPERIMENT_DATA_DIR = path.resolve(__dirname, "../../experiments/reward-evaluation/data");
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -14,6 +15,27 @@ function sleep(ms) {
 
 function readJson(file) {
   return JSON.parse(fs.readFileSync(file, "utf8"));
+}
+
+function writeJson(file, value) {
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, `${JSON.stringify(value, null, 2)}\n`);
+}
+
+function writeCsv(file, rows) {
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  if (rows.length === 0) {
+    fs.writeFileSync(file, "\n");
+    return;
+  }
+  const headers = Object.keys(rows[0]);
+  fs.writeFileSync(
+    file,
+    `${[
+      headers.join(","),
+      ...rows.map((row) => headers.map((header) => String(row[header])).join(",")),
+    ].join("\n")}\n`,
+  );
 }
 
 function artifact(contractFile, contractName) {
@@ -60,18 +82,31 @@ async function startAnvilIfNeeded(provider) {
   throw new Error("Anvil did not become ready");
 }
 
-async function waitTx(label, tx) {
+async function waitTx(label, tx, metrics) {
   const receipt = await tx.wait();
   console.log(`${label}: tx=${receipt.transactionHash} gas=${receipt.gasUsed.toString()}`);
+  if (metrics) {
+    metrics.transactions[label] = {
+      tx: receipt.transactionHash,
+      gas: receipt.gasUsed.toString(),
+    };
+  }
   return receipt;
 }
 
-async function deploy(label, signer, contractFile, contractName, args = []) {
+async function deploy(label, signer, contractFile, contractName, args = [], metrics) {
   const art = artifact(contractFile, contractName);
   const factory = new ethers.ContractFactory(art.abi, art.bytecode, signer);
   const contract = await factory.deploy(...args);
   const receipt = await contract.deployTransaction.wait();
   console.log(`${label}: address=${contract.address} tx=${receipt.transactionHash} gas=${receipt.gasUsed.toString()}`);
+  if (metrics) {
+    metrics.deployments[label] = {
+      address: contract.address,
+      tx: receipt.transactionHash,
+      gas: receipt.gasUsed.toString(),
+    };
+  }
   return contract;
 }
 
@@ -113,28 +148,57 @@ async function main() {
     const deployer = PRIVATE_KEY ? new ethers.Wallet(PRIVATE_KEY, provider) : provider.getSigner(accounts[0]);
     const deployerAddress = await deployer.getAddress();
     console.log(`Deployer: ${deployerAddress}`);
+    const metrics = {
+      generatedAt: new Date().toISOString(),
+      rpcUrl: RPC_URL,
+      deployer: deployerAddress,
+      deployments: {},
+      transactions: {},
+      context: {},
+    };
 
     const fixture = readJson(path.join(__dirname, "../vectors/v2/reward_proof_fixture.json"));
     const disputeId = ethers.BigNumber.from(fixture.disputeId);
     const finalStateRoot = ethers.BigNumber.from(fixture.finalStateRoot);
+    const rewardRandomness = ethers.BigNumber.from(fixture.rewardRandomness);
     const totalPayout = ethers.BigNumber.from(fixture.totalPayout);
     const proof = encodeProof(fixture.proof);
 
-    const verifier = await deploy("Groth16Verifier", deployer, "RewardGroth16Verifier.sol", "Groth16Verifier");
-    const adapter = await deploy("RewardVerifierAdapter", deployer, "RewardVerifierAdapter.sol", "RewardVerifierAdapter", [
-      verifier.address,
-    ]);
-    const registry = await deploy("FinalStateRegistry", deployer, "FinalStateRegistry.sol", "FinalStateRegistry");
+    const verifier = await deploy(
+      "Groth16Verifier",
+      deployer,
+      "RewardGroth16Verifier.sol",
+      "Groth16Verifier",
+      [],
+      metrics,
+    );
+    const adapter = await deploy(
+      "RewardVerifierAdapter",
+      deployer,
+      "RewardVerifierAdapter.sol",
+      "RewardVerifierAdapter",
+      [verifier.address],
+      metrics,
+    );
+    const registry = await deploy(
+      "FinalStateRegistry",
+      deployer,
+      "FinalStateRegistry.sol",
+      "FinalStateRegistry",
+      [],
+      metrics,
+    );
     const pool = await deploy("IntegratedRewardPool", deployer, "IntegratedRewardPool.sol", "IntegratedRewardPool", [
       adapter.address,
       registry.address,
-    ]);
+    ], metrics);
 
     await waitTx(
       "registerFinalState",
-      await registry.registerFinalState(disputeId, finalStateRoot, 1),
+      await registry.registerFinalStateWithRandomness(disputeId, finalStateRoot, 1, rewardRandomness),
+      metrics,
     );
-    await waitTx("fundDispute", await pool.fundDispute(disputeId, { value: totalPayout }));
+    await waitTx("fundDispute", await pool.fundDispute(disputeId, { value: totalPayout }), metrics);
     await waitTx(
       "finalizeRewards",
       await pool.finalizeRewards(
@@ -144,6 +208,7 @@ async function main() {
         proof,
         fixture.publicSignals,
       ),
+      metrics,
     );
 
     const winner = firstWinningRecipient(fixture);
@@ -151,18 +216,41 @@ async function main() {
     const claimable = await pool.claimable(disputeId, claimant);
     const before = await provider.getBalance(claimant);
     const claimSigner = provider.getSigner(claimant);
-    await waitTx("claim", await pool.connect(claimSigner).claim(disputeId));
+    await waitTx("claim", await pool.connect(claimSigner).claim(disputeId), metrics);
     const after = await provider.getBalance(claimant);
+    const poolBalanceAfter = await provider.getBalance(pool.address);
 
     console.log(`disputeId=${disputeId.toString()}`);
     console.log(`finalStateRoot=${finalStateRoot.toString()}`);
+    console.log(`rewardRandomness=${rewardRandomness.toString()}`);
     console.log(`winnerIndex=${winner.index}`);
     console.log(`claimant=${claimant}`);
     console.log(`fixtureClaimAmount=${winner.amount}`);
     console.log(`claimableBefore=${claimable.toString()}`);
     console.log(`claimantBalanceBefore=${before.toString()}`);
     console.log(`claimantBalanceAfter=${after.toString()}`);
-    console.log(`poolBalanceAfter=${(await provider.getBalance(pool.address)).toString()}`);
+    console.log(`poolBalanceAfter=${poolBalanceAfter.toString()}`);
+
+    metrics.context = {
+      disputeId: disputeId.toString(),
+      finalStateRoot: finalStateRoot.toString(),
+      rewardRandomness: rewardRandomness.toString(),
+      totalPayout: totalPayout.toString(),
+      winnerIndex: winner.index,
+      claimant,
+      fixtureClaimAmount: winner.amount,
+      claimableBefore: claimable.toString(),
+      claimantBalanceBefore: before.toString(),
+      claimantBalanceAfter: after.toString(),
+      poolBalanceAfter: poolBalanceAfter.toString(),
+    };
+    writeJson(path.join(EXPERIMENT_DATA_DIR, "anvil_reward_e2e_latest.json"), metrics);
+    writeCsv(path.join(EXPERIMENT_DATA_DIR, "reward_only_gas_breakdown.csv"), [
+      { operation: "register", gas: metrics.transactions.registerFinalState.gas },
+      { operation: "fund", gas: metrics.transactions.fundDispute.gas },
+      { operation: "finalize", gas: metrics.transactions.finalizeRewards.gas },
+      { operation: "claim", gas: metrics.transactions.claim.gas },
+    ]);
   } finally {
     if (anvil) {
       anvil.kill();

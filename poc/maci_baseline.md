@@ -105,14 +105,16 @@ Reasons:
 The sidecar will derive binary reports from final MACI ballots and build:
 
 ```text
-leaf_i = H(maciStateIndex_i, voterId_i, report_i, nonceCommitment_i, stake_i)
+leaf_i = H(maciStateIndex_i, voterId_i, report_i, nonceCommitment_i, stake_i, recipient_i)
 finalRewardStateRoot = MerkleRoot(leaf_1, ..., leaf_N)
 ```
 
 The reward circuit will privately open `nonce_i` to `nonceCommitment_i`, verify
 Merkle inclusion against `finalRewardStateRoot`, compute the peer-prediction
 lottery rewards, and expose payouts plus `pollId` and `finalRewardStateRoot` as
-public signals.
+public signals. The current circuit also exposes recipient addresses and
+registered reward randomness as public signals so the payout contract can bind
+claims to the proof and registry entry.
 
 This remains experimental. The MACI baseline is real; the reward sidecar binding
 is a PoC adapter and is not a production security claim.

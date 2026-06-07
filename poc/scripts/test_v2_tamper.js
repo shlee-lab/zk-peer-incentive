@@ -57,11 +57,26 @@ function main() {
   expectWitnessFailure("tampered_stake", (input) => {
     input.stakes[0] = (BigInt(input.stakes[0]) + 1n).toString();
   });
+  expectWitnessFailure("tampered_recipient", (input) => {
+    input.recipients[0] = (BigInt(input.recipients[0]) + 1n).toString();
+  });
+  expectWitnessFailure("out_of_range_recipient", (input) => {
+    input.recipients[0] = (1n << 160n).toString();
+  });
+  expectWitnessFailure("out_of_range_stake", (input) => {
+    input.stakes[0] = (1n << 32n).toString();
+  });
+  expectWitnessFailure("out_of_range_rho_tau", (input) => {
+    input.rhoTau = (1n << 64n).toString();
+  });
   expectWitnessFailure("tampered_final_state_root", (input) => {
     input.finalStateRoot = (BigInt(input.finalStateRoot) + 1n).toString();
   });
+  expectWitnessFailure("tampered_randomness", (input) => {
+    input.randomness = "0";
+  });
   expectWitnessFailure("tampered_payout", (input) => {
-    input.payouts[4] = (BigInt(input.payouts[4]) + 1n).toString();
+    input.payouts[0] = (BigInt(input.payouts[0]) + 1n).toString();
   });
 }
 

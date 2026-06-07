@@ -43,7 +43,9 @@ contract IntegratedRewardPoolV3Test {
     function registerAndFund(FinalStateRegistry registry, IntegratedRewardPool pool, uint256 disputeId, uint256 root)
         internal
     {
-        registry.registerFinalState(disputeId, root, 1);
+        uint256[] memory publicSignals = RewardProofFixture.publicSignals();
+        uint256 rewardRandomness = publicSignals[pool.REWARD_RANDOMNESS_SIGNAL_INDEX()];
+        registry.registerFinalStateWithRandomness(disputeId, root, 1, rewardRandomness);
         pool.fundDispute{value: RewardProofFixture.TOTAL_PAYOUT}(disputeId);
     }
 
@@ -117,7 +119,8 @@ contract IntegratedRewardPoolV3Test {
             bytes memory proof,
             uint256[] memory publicSignals
         ) = deployStack();
-        registry.registerFinalStateWithMaciStatus(disputeId, finalStateRoot, 1, false);
+        uint256 rewardRandomness = publicSignals[pool.REWARD_RANDOMNESS_SIGNAL_INDEX()];
+        registry.registerFinalStateWithMaciStatusAndRandomness(disputeId, finalStateRoot, 1, rewardRandomness, false);
         pool.fundDispute{value: RewardProofFixture.TOTAL_PAYOUT}(disputeId);
 
         (bool ok,) = address(pool).call(
@@ -150,6 +153,30 @@ contract IntegratedRewardPoolV3Test {
             )
         );
         require(!ok, "wrong dispute accepted");
+    }
+
+    function testWrongRandomnessFails() public {
+        (
+            FinalStateRegistry registry,
+            IntegratedRewardPool pool,
+            uint256 disputeId,
+            uint256 finalStateRoot,
+            address[] memory recipients,
+            uint256[] memory amounts,
+            bytes memory proof,
+            uint256[] memory publicSignals
+        ) = deployStack();
+        uint256 rewardRandomness = publicSignals[pool.REWARD_RANDOMNESS_SIGNAL_INDEX()] + 1;
+        registry.registerFinalStateWithRandomness(disputeId, finalStateRoot, 1, rewardRandomness);
+        pool.fundDispute{value: RewardProofFixture.TOTAL_PAYOUT}(disputeId);
+
+        (bool ok,) = address(pool).call(
+            abi.encodeCall(
+                IntegratedRewardPool.finalizeRewards,
+                (disputeId, recipients, amounts, proof, publicSignals)
+            )
+        );
+        require(!ok, "wrong randomness accepted");
     }
 
     function testTamperedProofFails() public {
@@ -196,6 +223,29 @@ contract IntegratedRewardPoolV3Test {
             )
         );
         require(!ok, "tampered signals accepted");
+    }
+
+    function testTamperedRecipientFails() public {
+        (
+            FinalStateRegistry registry,
+            IntegratedRewardPool pool,
+            uint256 disputeId,
+            uint256 finalStateRoot,
+            address[] memory recipients,
+            uint256[] memory amounts,
+            bytes memory proof,
+            uint256[] memory publicSignals
+        ) = deployStack();
+        registerAndFund(registry, pool, disputeId, finalStateRoot);
+        recipients[0] = address(uint160(uint256(keccak256(bytes("attacker recipient")))));
+
+        (bool ok,) = address(pool).call(
+            abi.encodeCall(
+                IntegratedRewardPool.finalizeRewards,
+                (disputeId, recipients, amounts, proof, publicSignals)
+            )
+        );
+        require(!ok, "tampered recipient accepted");
     }
 
     function testDoubleFinalizationFails() public {

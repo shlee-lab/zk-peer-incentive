@@ -4,6 +4,7 @@ function toBigInt(value, name = "value") {
   if (typeof value === "bigint") return value;
   if (typeof value === "number" && Number.isInteger(value)) return BigInt(value);
   if (typeof value === "string" && /^-?\d+$/.test(value)) return BigInt(value);
+  if (typeof value === "string" && /^0x[0-9a-fA-F]+$/.test(value)) return BigInt(value);
   throw new Error(`${name} must be an integer`);
 }
 
@@ -210,6 +211,7 @@ async function computeLotteryPayouts({
   nonces,
   disputeId,
   stateRoot,
+  randomness,
   smoothing = 1n,
   kappa = 1n,
   scale = 1_000_000n,
@@ -236,11 +238,15 @@ async function computeLotteryPayouts({
     scale,
   });
   const lotteryScale = 1n << BigInt(lotteryBits);
-  const seed = await poseidonHash([
+  const seedInputs = [
     ...nonces.map((nonce, i) => toBigInt(nonce, `nonces[${i}]`)),
     toBigInt(disputeId, "disputeId"),
     toBigInt(stateRoot, "stateRoot"),
-  ]);
+  ];
+  if (randomness !== undefined) {
+    seedInputs.push(toBigInt(randomness, "randomness"));
+  }
+  const seed = await poseidonHash(seedInputs);
 
   const draws = [];
   const drawHashes = [];
@@ -281,14 +287,19 @@ async function hashNonceCommitment(nonce) {
   return poseidonHash([toBigInt(nonce, "nonce"), 0n]);
 }
 
-async function hashFinalStateLeaf({ maciStateIndex, voterId, report, nonceCommitment, stake }) {
+async function hashFinalStateLeaf({ maciStateIndex, voterId, report, nonceCommitment, stake, recipient }) {
   if (report !== 0 && report !== 1) throw new Error("report must be 0 or 1");
+  const recipientValue = toBigInt(recipient, "recipient");
+  if (recipientValue < 0n || recipientValue >= (1n << 160n)) {
+    throw new Error("recipient must fit in 160 bits");
+  }
   return poseidonHash([
     toBigInt(maciStateIndex, "maciStateIndex"),
     toBigInt(voterId, "voterId"),
     BigInt(report),
     toBigInt(nonceCommitment, "nonceCommitment"),
     toBigInt(stake, "stake"),
+    recipientValue,
   ]);
 }
 
@@ -348,7 +359,7 @@ async function verifyMerklePath({ leaf, root, pathElements, pathIndices }) {
   return node === toBigInt(root, "root");
 }
 
-async function buildFinalState({ maciStateIndices, voterIds, reports, nonces, nonceCommitments, stakes }) {
+async function buildFinalState({ maciStateIndices, voterIds, reports, nonces, nonceCommitments, stakes, recipients }) {
   if (!Array.isArray(maciStateIndices) || maciStateIndices.length !== reports.length) {
     throw new Error("maciStateIndices must have the same length as reports");
   }
@@ -370,6 +381,9 @@ async function buildFinalState({ maciStateIndices, voterIds, reports, nonces, no
   if (!Array.isArray(stakes) || stakes.length !== reports.length) {
     throw new Error("stakes must have the same length as reports");
   }
+  if (!Array.isArray(recipients) || recipients.length !== reports.length) {
+    throw new Error("recipients must have the same length as reports");
+  }
 
   const leaves = [];
   for (let i = 0; i < reports.length; i += 1) {
@@ -380,6 +394,7 @@ async function buildFinalState({ maciStateIndices, voterIds, reports, nonces, no
         report: reports[i],
         nonceCommitment: nonceCommitments[i],
         stake: stakes[i],
+        recipient: recipients[i],
       }),
     );
   }

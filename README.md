@@ -47,16 +47,19 @@ The system currently supports:
 - reward sidecar state:
   - derives binary reports from final MACI ballots;
   - binds reports to `maciStateIndex`, voter identity value, nonce commitment,
-    and public stake;
+    public stake, and recipient address;
   - commits those leaves into a Merkle root;
 - reward proof:
   - proves hidden reports and nonces are bound to the reward sidecar root;
   - computes inverse-frequency peer-agreement rewards;
   - converts expected rewards into lottery payouts;
-  - exposes public payout values, poll/dispute id, and reward state root;
+  - exposes public payout values, recipient addresses, poll/dispute id, reward
+    state root, and reward randomness;
 - Solidity reward flow:
   - verifies the generated Groth16 proof on-chain;
   - checks the proof root matches the registered reward state root;
+  - checks the proof randomness matches the registered reward randomness;
+  - checks payout recipient addresses match proof public signals;
   - records claimable rewards;
   - allows winners to claim.
 
@@ -89,7 +92,7 @@ For each voter, the sidecar leaf is:
 
 ```text
 nonceCommitment_i = Poseidon(nonce_i, 0)
-leaf_i = Poseidon(maciStateIndex_i, voterId_i, report_i, nonceCommitment_i, stake_i)
+leaf_i = Poseidon(maciStateIndex_i, voterId_i, report_i, nonceCommitment_i, stake_i, recipient_i)
 ```
 
 The Merkle root of these leaves is the public reward state root.
@@ -101,7 +104,8 @@ I know hidden reports and nonces such that:
 1. each report is binary;
 2. each nonce opens to its nonce commitment;
 3. all leaves are included in the public reward state root;
-4. the public payout vector follows the peer-prediction lottery rule.
+4. each public recipient address is bound to the same leaf as the hidden report;
+5. the public payout vector follows the peer-prediction lottery rule.
 ```
 
 ### Reward Contracts
@@ -136,13 +140,19 @@ The PoC uses:
 - ring peer matching: `peer(i) = i + 1 mod N`;
 - smoothed leave-one-out inverse-frequency peer agreement;
 - high-entropy private nonces;
+- registered public reward randomness;
 - a lottery draw from `Poseidon(seed, i)`.
 
 The lottery seed is:
 
 ```text
-seed = Poseidon(nonce_0, ..., nonce_7, pollId, finalRewardStateRoot)
+seed = Poseidon(nonce_0, ..., nonce_7, pollId, finalRewardStateRoot, rewardRandomness)
 ```
+
+For production, `rewardRandomness` should come from a source the coordinator
+cannot choose after seeing reports, such as a VRF/randomness beacon or a
+commit-reveal protocol. The local PoC uses deterministic test randomness for
+reproducibility.
 
 Each participant either receives:
 
@@ -221,7 +231,8 @@ MACI_REPO=/tmp/maci-official npm run e2e:full-maci-reward
 
 ## Evaluation Results
 
-Latest successful full MACI + reward Anvil run:
+Latest full MACI + reward Anvil run after recipient binding, public randomness
+binding, and range-check additions:
 
 ```text
 execution chain id: 31337
@@ -230,34 +241,36 @@ MACI tally option 1: 36
 total spent voice credits: 648
 derived reports: [1, 0, 1, 1, 0, 0, 1, 0]
 finalRewardStateRoot:
-  5467628283882597849812545621007549485893283266378756219242748369852677028795
-reward winner index: 4
-MACI proof phase: 120523 ms
-reward proof phase: 4560 ms
+  7169802589688111173330386380848112532285602135796422622859552470452160090463
+rewardRandomness:
+  14526973487272673442968073038832824276367766208387535527132383916993394146268
+reward winner indices: [2, 4]
+MACI proof phase: 109063 ms
+reward proof phase: 3339 ms
 ```
 
 Reward-related gas from the Anvil run:
 
 ```text
-registerFinalState   93,334 gas
-fundDispute          47,352 gas
-finalizeRewards     464,223 gas
-claim                30,662 gas
+registerFinalState  116,309 gas
+fundDispute          47,396 gas
+finalizeRewards     554,847 gas
+claim                30,684 gas
 ```
 
 Reward contract deployment gas:
 
 ```text
-RewardGroth16Verifier   773,176 gas
+RewardGroth16Verifier   957,380 gas
 RewardVerifierAdapter   328,329 gas
-FinalStateRegistry      365,305 gas
-IntegratedRewardPool  1,117,198 gas
+FinalStateRegistry      517,322 gas
+IntegratedRewardPool  1,226,980 gas
 ```
 
 Foundry tests:
 
 ```text
-12 tests passed
+14 tests passed
 ```
 
 The tests cover:
@@ -268,6 +281,8 @@ The tests cover:
 - tampered payout rejected;
 - tampered proof rejected;
 - unverified MACI tally status rejected;
+- wrong registered reward randomness rejected;
+- recipient address substitution rejected;
 - double finalization rejected;
 - winner claim succeeds;
 - double claim fails through cleared claimable balance.
@@ -275,10 +290,52 @@ The tests cover:
 Circuit size:
 
 ```text
-19,867 non-linear constraints
-22 public inputs
+23,881 non-linear constraints
+31 public inputs
 80 private inputs
 ```
+
+## Experimental Figures
+
+Reproducible evaluation data and figures live under
+`experiments/reward-evaluation/`.
+
+Generate them with:
+
+```bash
+cd poc
+npm run experiments:reward
+```
+
+The data files are CSV/JSON:
+
+- `experiments/reward-evaluation/data/parameter_sweep.csv`
+- `experiments/reward-evaluation/data/reward_sensitivity.csv`
+- `experiments/reward-evaluation/data/lottery_trials.csv`
+- `experiments/reward-evaluation/data/stake_concentration.csv`
+- `experiments/reward-evaluation/data/gas_breakdown.csv`
+- `experiments/reward-evaluation/data/reward_only_gas_breakdown.csv`
+- `experiments/reward-evaluation/data/anvil_reward_e2e_latest.json`
+- `experiments/reward-evaluation/data/full_maci_reward_anvil_latest.json`
+
+The same plots are exported as PNG previews for README and PDF files for paper
+or slide use.
+
+![Reward sensitivity](experiments/reward-evaluation/figures/reward_sensitivity.png)
+
+PDF: [reward_sensitivity.pdf](experiments/reward-evaluation/figures/reward_sensitivity.pdf)
+
+![Lottery payout convergence](experiments/reward-evaluation/figures/lottery_unbiasedness.png)
+
+PDF: [lottery_unbiasedness.pdf](experiments/reward-evaluation/figures/lottery_unbiasedness.pdf)
+
+![Stake concentration sensitivity](experiments/reward-evaluation/figures/stake_concentration.png)
+
+PDF: [stake_concentration.pdf](experiments/reward-evaluation/figures/stake_concentration.pdf)
+
+![Reward on-chain cost](experiments/reward-evaluation/figures/cost_profile.png)
+
+PDF: [cost_profile.pdf](experiments/reward-evaluation/figures/cost_profile.pdf)
 
 ## Generated Artifacts
 
@@ -320,6 +377,9 @@ poc/scripts/build_sidecar_reward_artifacts.js
 poc/scripts/run_full_maci_reward_e2e.js
   Runs official MACI plus reward integration on Hardhat or Anvil.
 
+experiments/reward-evaluation/
+  Parameter sweep data, Anvil gas data, and generated PNG/PDF figures.
+
 poc/maci_baseline.md
   Exact official MACI setup, pinned versions, commands, and Anvil details.
 
@@ -345,8 +405,14 @@ and not a claim that MACI's core protocol was improved.
 - Uses a fixed `N = 8`.
 - Uses binary reports only.
 - Uses a local development Groth16 setup.
-- Reward sidecar nonce commitments are experimental.
-- Recipient identity is not proven inside the reward circuit.
+- Reward sidecar nonce commitments and public randomness binding are
+  experimental.
+- Recipient addresses are bound to the reward proof and sidecar leaves, but the
+  off-chain mapping from MACI state index to payout address is still
+  experimental.
+- Lottery fairness depends on obtaining `rewardRandomness` after the final
+  reward state is fixed; production needs VRF, a randomness beacon, or
+  commit-reveal.
 - Sybil resistance depends on external registration or staking policy.
 - The reward proof verifies payout correctness, not actual human effort.
 - Coordinator privacy and MACI security assumptions remain MACI's responsibility.

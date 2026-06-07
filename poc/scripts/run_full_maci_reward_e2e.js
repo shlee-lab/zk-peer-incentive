@@ -443,6 +443,7 @@ describe("full MACI plus reward sidecar E2E", function test() {
       rhoTau: "3000000",
       lotteryBits: 32,
       nonceLabel: "full-maci-reward-sidecar",
+      randomnessLabel: "full-maci-reward-sidecar",
     };
     const sidecarFile = path.join(OUTPUT_ROOT, "sidecar_input.json");
     const rewardOutDir = path.join(OUTPUT_ROOT, "reward");
@@ -453,6 +454,7 @@ describe("full MACI plus reward sidecar E2E", function test() {
 
     const disputeId = BigInt(fixture.disputeId);
     const finalRewardStateRoot = BigInt(fixture.finalStateRoot);
+    const rewardRandomness = BigInt(fixture.rewardRandomness);
     const totalPayout = BigInt(fixture.totalPayout);
     expect(totalPayout).to.be.greaterThan(0n);
 
@@ -482,7 +484,15 @@ describe("full MACI plus reward sidecar E2E", function test() {
     );
     const poolAddress = await pool.getAddress();
 
-    await waitTx("reward.registerFinalState", await registry.registerFinalState(disputeId, finalRewardStateRoot, BigInt(tallyData.results.tally[1])));
+    await waitTx(
+      "reward.registerFinalState",
+      await registry.registerFinalStateWithRandomness(
+        disputeId,
+        finalRewardStateRoot,
+        BigInt(tallyData.results.tally[1]),
+        rewardRandomness,
+      ),
+    );
     await waitTx("reward.fundDispute", await pool.fundDispute(disputeId, { value: totalPayout }));
     await waitTx(
       "reward.finalizeRewards",
@@ -507,6 +517,7 @@ describe("full MACI plus reward sidecar E2E", function test() {
     console.log(\`maciTally0=\${tallyData.results.tally[0]} maciTally1=\${tallyData.results.tally[1]}\`);
     console.log(\`reports=\${extractedReports.join(",")}\`);
     console.log(\`finalRewardStateRoot=\${fixture.finalStateRoot}\`);
+    console.log(\`rewardRandomness=\${fixture.rewardRandomness}\`);
     console.log(\`rewardPool=\${poolAddress}\`);
     console.log(\`winnerIndex=\${winnerIndex}\`);
     console.log(\`claimant=\${claimant}\`);

@@ -1,0 +1,105 @@
+{
+  "generatedAt": "2026-06-07T16:59:26.672Z",
+  "voters": 8,
+  "lotteryBits": 32,
+  "sweepRows": 192,
+  "lotteryTrials": 512,
+  "profiles": [
+    {
+      "name": "maci_anvil_reports",
+      "reports": [
+        1,
+        0,
+        1,
+        1,
+        0,
+        0,
+        1,
+        0
+      ],
+      "stakes": [
+        "10",
+        "20",
+        "10",
+        "15",
+        "5",
+        "10",
+        "15",
+        "15"
+      ]
+    },
+    {
+      "name": "alternating",
+      "reports": [
+        1,
+        0,
+        1,
+        0,
+        1,
+        0,
+        1,
+        0
+      ],
+      "stakes": [
+        "10",
+        "20",
+        "10",
+        "15",
+        "5",
+        "10",
+        "15",
+        "15"
+      ]
+    },
+    {
+      "name": "one_sided",
+      "reports": [
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        0
+      ],
+      "stakes": [
+        "10",
+        "20",
+        "10",
+        "15",
+        "5",
+        "10",
+        "15",
+        "15"
+      ]
+    },
+    {
+      "name": "consensus",
+      "reports": [
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1
+      ],
+      "stakes": [
+        "10",
+        "20",
+        "10",
+        "15",
+        "5",
+        "10",
+        "15",
+        "15"
+      ]
+    }
+  ],
+  "notes": [
+    "Lottery trials intentionally sample many public randomness values to evaluate distribution, not to select a production seed.",
+    "Circuit and contract remain fixed at N=8 for this PoC."
+  ]
+}

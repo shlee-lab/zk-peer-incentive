@@ -12,9 +12,10 @@ These contracts are the minimal payout layer for the ZK reward PoC.
 - `RewardVerifierAdapter.sol`: adapter from `bytes` proof and dynamic public
   signals to the generated verifier's fixed-array interface.
 - `FinalStateRegistry.sol`: minimal reward sidecar registry with a MACI tally
-  status flag.
+  status flag and registered reward randomness.
 - `IntegratedRewardPool.sol`: reward pool that binds proof public signals to
-  the registry's `disputeId` and reward sidecar `finalStateRoot`.
+  the registry's `disputeId`, reward sidecar `finalStateRoot`, registered
+  reward randomness, and payout recipients.
 
 ## Basic RewardPool Flow
 
@@ -25,6 +26,7 @@ These contracts are the minimal payout layer for the ZK reward PoC.
 5. `RewardPool` checks:
    - verifier accepts the proof;
    - the first `amounts.length` public signals equal the payout amounts;
+   - recipient public signals equal the submitted recipient addresses;
    - the funded budget covers total payout.
 6. Recipients call `claim(disputeId)`.
 
@@ -34,21 +36,23 @@ These contracts are the minimal payout layer for the ZK reward PoC.
 2. Deploy `RewardVerifierAdapter`.
 3. Deploy `FinalStateRegistry`.
 4. Deploy `IntegratedRewardPool(adapter, registry)`.
-5. Register `finalStateRoot` for the dispute in the registry with verified MACI
-   tally status.
+5. Register `finalStateRoot` and `rewardRandomness` for the dispute in the
+   registry with verified MACI tally status.
 6. Fund the dispute in the reward pool.
 7. Call `finalizeRewards` with recipients, payouts, proof, and public signals.
 8. Recipients call `claim(disputeId)`.
 
-`IntegratedRewardPool` checks that public signal index 19 equals `disputeId`
-and public signal index 20 equals the registry's `finalStateRoot`. It also
-requires the registry entry's `maciTallyVerified` flag to be true.
+`IntegratedRewardPool` checks that public signal index 27 equals `disputeId`,
+index 28 equals the registry's `finalStateRoot`, and index 29 equals the
+registry's `rewardRandomness`. It also checks recipient public signals
+`8..15` against the submitted recipient addresses and requires the registry
+entry's `maciTallyVerified` flag to be true.
 
 ## Connecting a Generated snarkjs Verifier
 
 `snarkjs` generates verifier contracts with a typed Groth16 interface rather
 than the generic `bytes` interface used by `RewardPool`.
-`RewardVerifierAdapter` decodes `abi.encode(a, b, c)` and copies the 22 public
+`RewardVerifierAdapter` decodes `abi.encode(a, b, c)` and copies the 31 public
 signals into the generated verifier's fixed-size array.
 
 For a production contract, prefer a typed adapter and a stable proof/public
@@ -77,7 +81,10 @@ npm run e2e:anvil
 ## Limitations
 
 - This is an ETH payout sketch, not an ERC20 integration.
-- Recipient identity is not proven by the circuit.
-- The generated proof must bind `payoutScaled[i]` to public signals.
+- Recipient addresses are bound to the proof, but the MACI state-index to
+  recipient-address mapping is still an experimental sidecar input.
+- The generated proof must bind `payout[i]` and `recipient[i]` to public signals.
+- Randomness fairness depends on registering an externally unbiased
+  `rewardRandomness` after the final reward state is fixed.
 - The report-to-encrypted-vote consistency relation is handled by the
   MACI-derived reward sidecar state, not by this payout contract.

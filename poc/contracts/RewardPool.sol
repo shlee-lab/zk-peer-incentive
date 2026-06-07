@@ -4,6 +4,9 @@ pragma solidity ^0.8.24;
 import "./IRewardVerifier.sol";
 
 contract RewardPool {
+    uint256 public constant PAYOUT_COUNT = 8;
+    uint256 public constant RECIPIENT_SIGNAL_OFFSET = 8;
+
     struct Dispute {
         bool finalized;
         uint256 remainingBudget;
@@ -62,13 +65,18 @@ contract RewardPool {
         Dispute storage dispute = disputes[disputeId];
         require(!dispute.finalized, "already finalized");
         require(recipients.length == amounts.length, "length mismatch");
-        require(publicSignals.length >= amounts.length, "missing payout signals");
+        require(amounts.length == PAYOUT_COUNT, "wrong payout count");
+        require(publicSignals.length >= RECIPIENT_SIGNAL_OFFSET + amounts.length, "missing public signals");
         require(verifier.verifyProof(proof, publicSignals), "invalid proof");
 
         uint256 totalPayout = 0;
         for (uint256 i = 0; i < amounts.length; i++) {
             require(recipients[i] != address(0), "zero recipient");
             require(publicSignals[i] == amounts[i], "payout signal mismatch");
+            require(
+                publicSignals[RECIPIENT_SIGNAL_OFFSET + i] == uint256(uint160(recipients[i])),
+                "recipient signal mismatch"
+            );
             claimable[disputeId][recipients[i]] += amounts[i];
             totalPayout += amounts[i];
         }

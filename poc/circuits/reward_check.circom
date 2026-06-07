@@ -11,12 +11,14 @@ include "../node_modules/circomlib/circuits/bitify.circom";
 //
 // Public:
 // - payouts[i]
+// - recipients[i]
 // - stakes[i]
 // - smoothing
 // - kappa
 // - scale
 // - disputeId (used as pollId for the MACI sidecar integration)
 // - finalStateRoot (the reward sidecar root)
+// - randomness (public draw entropy registered after the final reward state)
 // - rhoTau
 //
 // Private witness:
@@ -38,14 +40,14 @@ include "../node_modules/circomlib/circuits/bitify.circom";
 // B_i = report_i * N_i + (1-report_i) * (D_i-N_i)
 //
 // Each reward sidecar leaf is:
-// Poseidon(maciStateIndex_i, voterId_i, report_i, nonceCommitment_i, stake_i).
+// Poseidon(maciStateIndex_i, voterId_i, report_i, nonceCommitment_i, stake_i, recipient_i).
 // The circuit privately opens nonce_i and checks:
 // nonceCommitment_i = Poseidon(nonce_i, 0).
 // It then verifies a fixed-position Merkle path for every voter and requires each
 // path to end at finalStateRoot.
 //
-// A private seed is Poseidon(nonces..., disputeId, finalStateRoot). For each voter,
-// draw_i is the low LOTTERY_BITS bits of Poseidon(seed, i), and the public
+// The seed is Poseidon(nonces..., disputeId, finalStateRoot, randomness). For each
+// voter, draw_i is the low LOTTERY_BITS bits of Poseidon(seed, i), and the public
 // payout is rhoTau iff draw_i * rhoTau < expectedScaled_i * 2^LOTTERY_BITS.
 template RewardCheck(N, DEPTH, NBITS, LOTTERY_BITS) {
     signal input reports[N];
@@ -58,28 +60,56 @@ template RewardCheck(N, DEPTH, NBITS, LOTTERY_BITS) {
     signal input rewardRemainders[N];
 
     signal input payouts[N];
+    signal input recipients[N];
     signal input stakes[N];
     signal input smoothing;
     signal input kappa;
     signal input scale;
     signal input disputeId;
     signal input finalStateRoot;
+    signal input randomness;
     signal input rhoTau;
 
     signal totalStake;
     signal totalOneStake;
     signal weightedReport[N];
 
-    component seedHash = Poseidon(N + 2);
+    component seedHash = Poseidon(N + 3);
     component leafHash[N];
     component nonceCommitmentHash[N];
     component merkleHash[N][DEPTH];
     signal merkleNode[N][DEPTH + 1];
 
+    component stakeRange[N];
+    component payoutRange[N];
+    component recipientRange[N];
+    component expectedRange[N];
+    component remainderRange[N];
+    component smoothingRange = Num2Bits(32);
+    component kappaRange = Num2Bits(32);
+    component scaleRange = Num2Bits(32);
+    component rhoTauRange = Num2Bits(64);
+
+    smoothingRange.in <== smoothing;
+    kappaRange.in <== kappa;
+    scaleRange.in <== scale;
+    rhoTauRange.in <== rhoTau;
+
     var totalStakeExpr = 0;
     var totalOneStakeExpr = 0;
     for (var i = 0; i < N; i++) {
         reports[i] * (reports[i] - 1) === 0;
+        stakeRange[i] = Num2Bits(32);
+        stakeRange[i].in <== stakes[i];
+        payoutRange[i] = Num2Bits(64);
+        payoutRange[i].in <== payouts[i];
+        recipientRange[i] = Num2Bits(160);
+        recipientRange[i].in <== recipients[i];
+        expectedRange[i] = Num2Bits(64);
+        expectedRange[i].in <== expectedScaled[i];
+        remainderRange[i] = Num2Bits(NBITS);
+        remainderRange[i].in <== rewardRemainders[i];
+
         seedHash.inputs[i] <== nonces[i];
 
         nonceCommitmentHash[i] = Poseidon(2);
@@ -87,12 +117,13 @@ template RewardCheck(N, DEPTH, NBITS, LOTTERY_BITS) {
         nonceCommitmentHash[i].inputs[1] <== 0;
         nonceCommitmentHash[i].out === nonceCommitments[i];
 
-        leafHash[i] = Poseidon(5);
+        leafHash[i] = Poseidon(6);
         leafHash[i].inputs[0] <== maciStateIndices[i];
         leafHash[i].inputs[1] <== voterIds[i];
         leafHash[i].inputs[2] <== reports[i];
         leafHash[i].inputs[3] <== nonceCommitments[i];
         leafHash[i].inputs[4] <== stakes[i];
+        leafHash[i].inputs[5] <== recipients[i];
         merkleNode[i][0] <== leafHash[i].out;
 
         for (var d = 0; d < DEPTH; d++) {
@@ -114,6 +145,7 @@ template RewardCheck(N, DEPTH, NBITS, LOTTERY_BITS) {
     }
     seedHash.inputs[N] <== disputeId;
     seedHash.inputs[N + 1] <== finalStateRoot;
+    seedHash.inputs[N + 2] <== randomness;
 
     totalStake <== totalStakeExpr;
     totalOneStake <== totalOneStakeExpr;
@@ -205,4 +237,4 @@ template RewardCheck(N, DEPTH, NBITS, LOTTERY_BITS) {
     }
 }
 
-component main { public [payouts, stakes, smoothing, kappa, scale, disputeId, finalStateRoot, rhoTau] } = RewardCheck(8, 3, 128, 32);
+component main { public [payouts, recipients, stakes, smoothing, kappa, scale, disputeId, finalStateRoot, randomness, rhoTau] } = RewardCheck(8, 3, 128, 32);

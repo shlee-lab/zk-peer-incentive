@@ -17,9 +17,13 @@ consistent with hidden reports and the announced reward rule.
 - `kappa`: reward scale.
 - `scale`: integer scale used for fixed-point payouts.
 - `payout[i]`: public lottery payout for voter `i`.
+- `recipient[i]`: public payout address for voter `i`, encoded as a 160-bit
+  field element.
 - `disputeId`: public dispute or MACI poll context.
 - `finalStateRoot`: public reward sidecar root. In the MACI integration plan this
   is `finalRewardStateRoot`.
+- `rewardRandomness`: public draw entropy registered for this final reward
+  state.
 - `rhoTau`: public jackpot payout.
 
 The current circuit keeps reports/nonces private and binds them to a MACI reward
@@ -34,7 +38,7 @@ sidecar root with fixed-position Merkle openings.
 - `nonceCommitments[i]`.
 - `merklePathElements[i][d]`.
 - `expectedScaled[i]`.
-- Quotient/remainder witnesses for fixed-point division.
+- Remainder witnesses for fixed-point division.
 
 ## Reward Rule
 
@@ -84,7 +88,7 @@ $$
 The lottery seed is:
 
 $$
-s = H(nonce_0,\ldots,nonce_{N-1}, disputeId, finalStateRoot).
+s = H(nonce_0,\ldots,nonce_{N-1}, disputeId, finalStateRoot, rewardRandomness).
 $$
 
 The voter draw is:
@@ -162,11 +166,18 @@ $$
 8. Reward sidecar final-state inclusion:
 
    $$
-   leaf_i = H(maciStateIndex_i, voterId_i, r_i, nonceCommitment_i, stake_i)
+   leaf_i = H(maciStateIndex_i, voterId_i, r_i, nonceCommitment_i, stake_i, recipient_i)
    $$
 
    and the fixed-position Merkle path for index `i` must reconstruct the public
    `finalStateRoot`.
+
+9. Public range checks:
+
+   - `stakes[i]`, `smoothing`, `kappa`, and `scale` fit in 32 bits.
+   - `rhoTau`, `payout[i]`, and `expectedScaled[i]` fit in 64 bits.
+   - `recipient[i]` fits in 160 bits.
+   - `rem_i` fits within the 128-bit comparison domain.
 
 The circuit uses `circomlib` Poseidon, bit decomposition, and less-than gadgets.
 
@@ -177,6 +188,14 @@ public lottery payouts match the hidden reports and nonces under the announced
 reward rule and public context, and that those same reports/nonces open to the
 nonce commitments and reports included in the public reward sidecar root. The
 proof does not itself reveal the reports or nonces.
+
+The proof also binds payout recipient addresses to the sidecar leaves. It does
+not prove that the sidecar's recipient address mapping was produced by MACI; the
+current integration treats that mapping as an experimental adapter input.
+
+Lottery fairness additionally depends on `rewardRandomness` being generated
+after the final reward state is fixed and without coordinator control. A
+production design should use a VRF, randomness beacon, or commit-reveal flow.
 
 The proof does not show that voters exerted effort. Effort is induced by the
 mechanism-design incentive analysis, not cryptographically proven.

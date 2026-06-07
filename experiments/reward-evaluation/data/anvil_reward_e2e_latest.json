@@ -1,0 +1,58 @@
+{
+  "generatedAt": "2026-06-07T17:10:41.821Z",
+  "rpcUrl": "http://127.0.0.1:8545",
+  "deployer": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+  "deployments": {
+    "Groth16Verifier": {
+      "address": "0x5FbDB2315678afecb367f032d93F642f64180aa3",
+      "tx": "0x7b806127971e54ca103d461b4c828648b00a35c52b44399a0897b56331bdf8db",
+      "gas": "957380"
+    },
+    "RewardVerifierAdapter": {
+      "address": "0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512",
+      "tx": "0xbe354062d3b95abfcb6bd7b49ed608ca77e668bdfea70a5fae7684ddbb7bdd36",
+      "gas": "328329"
+    },
+    "FinalStateRegistry": {
+      "address": "0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0",
+      "tx": "0xada7ca961cff2173d55a6824098348015a7d57589d1dda993667f0759a56a2e1",
+      "gas": "517322"
+    },
+    "IntegratedRewardPool": {
+      "address": "0xCf7Ed3AccA5a467e9e704C703E8D87F634fB0Fc9",
+      "tx": "0x8aee0ace566b93d49b0e788bc897786457c04ceeaa71cbbdd79e4fd7cfdc2319",
+      "gas": "1226980"
+    }
+  },
+  "transactions": {
+    "registerFinalState": {
+      "tx": "0x4a899572fe3594597f72e0f3eea37feeb9761ad12bc03b3c013a24cf37d4636f",
+      "gas": "116321"
+    },
+    "fundDispute": {
+      "tx": "0x0f57b5dd52119af78f5cfa6100741c3e1f04590b21098839b7f387ffc601eb99",
+      "gas": "47408"
+    },
+    "finalizeRewards": {
+      "tx": "0x754f8cc4243eeea5d2e1d9fc2ed92216e37034cbafca4f7da9aabae30ae70280",
+      "gas": "534863"
+    },
+    "claim": {
+      "tx": "0xc6b073449924fc0786c8014e60ccbc04360ba32c8c8ee64d2a6341ea7f658df4",
+      "gas": "30696"
+    }
+  },
+  "context": {
+    "disputeId": "78",
+    "finalStateRoot": "14695795747349035543706149517880938740666020856823802164744237392406265945397",
+    "rewardRandomness": "9263339189501945826388293463996074031888061588302967159355430724061076023359",
+    "totalPayout": "3000000",
+    "winnerIndex": 0,
+    "claimant": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+    "fixtureClaimAmount": "3000000",
+    "claimableBefore": "3000000",
+    "claimantBalanceBefore": "10000000000000000000000",
+    "claimantBalanceAfter": "9999999956815812661408",
+    "poolBalanceAfter": "0"
+  }
+}

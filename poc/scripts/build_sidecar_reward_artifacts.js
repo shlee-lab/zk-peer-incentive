@@ -56,6 +56,16 @@ function toBigIntArray(values, label) {
   return values.map((value) => BigInt(value));
 }
 
+function toRecipientArray(values) {
+  const recipients = toBigIntArray(values, "recipients");
+  recipients.forEach((recipient, i) => {
+    if (recipient <= 0n || recipient >= (1n << 160n)) {
+      throw new Error(`recipients[${i}] must be a nonzero 160-bit address value`);
+    }
+  });
+  return recipients;
+}
+
 function toReportArray(values) {
   if (!Array.isArray(values) || values.length !== N) {
     throw new Error(`reports must contain ${N} values`);
@@ -87,7 +97,12 @@ function baseInputs(sidecar, attempt) {
       ? toBigIntArray(sidecar.nonces, "nonces")
       : defaultNonces(sidecar.nonceLabel || "full-maci-reward-sidecar", attempt),
     voterIds: toBigIntArray(sidecar.voterIds, "voterIds"),
+    recipients: toRecipientArray(sidecar.recipients),
     disputeId: BigInt(sidecar.disputeId ?? sidecar.pollId),
+    randomness: BigInt(
+      sidecar.randomness ??
+        fieldElement(`${sidecar.randomnessLabel || sidecar.nonceLabel || "full-maci-reward-sidecar"} reward randomness`),
+    ),
     smoothing: BigInt(sidecar.smoothing ?? 1),
     kappa: BigInt(sidecar.kappa ?? 100),
     scale: BigInt(sidecar.scale ?? 1_000),
@@ -106,8 +121,8 @@ async function buildVector(sidecar, attempt) {
   const payouts = lottery.payouts.map((payout) => payout.toString());
 
   const vector = {
-    version: "full-maci-sidecar-v1",
-    description: "Lottery reward vector derived from official MACI final poll reports.",
+    version: "full-maci-sidecar-v2",
+    description: "Lottery reward vector derived from official MACI final poll reports with recipient and randomness binding.",
     inputs: lotteryInputs,
     nonceCommitments: finalState.nonceCommitments.map((commitment) => commitment.toString()),
     leaves: finalState.leaves.map((leaf) => leaf.toString()),
@@ -137,30 +152,18 @@ async function buildVector(sidecar, attempt) {
     expectedScaled: vector.expectedRewards,
     rewardRemainders: vector.rewardRemainders,
     payouts,
+    recipients: inputs.recipients,
     stakes: inputs.stakes,
     smoothing: inputs.smoothing,
     kappa: inputs.kappa,
     scale: inputs.scale,
     disputeId: inputs.disputeId,
     finalStateRoot: finalState.finalStateRoot,
+    randomness: inputs.randomness,
     rhoTau: inputs.rhoTau,
   };
 
   return { inputs, vector, circuitInput };
-}
-
-async function buildWinningVector(sidecar) {
-  if (sidecar.nonces) {
-    return buildVector(sidecar, 0);
-  }
-
-  for (let attempt = 0; attempt < 256; attempt += 1) {
-    const result = await buildVector(sidecar, attempt);
-    if (result.vector.wins.some((win) => BigInt(win) !== 0n)) {
-      return result;
-    }
-  }
-  throw new Error("failed to find deterministic sidecar nonces with at least one lottery winner");
 }
 
 function run(pocRoot, args) {
@@ -196,7 +199,7 @@ async function main() {
   requireFile(verificationKey, "missing reward verification key; run the v2 proving setup first");
 
   const sidecar = readJson(sidecarFile);
-  const { inputs, vector, circuitInput } = await buildWinningVector(sidecar);
+  const { inputs, vector, circuitInput } = await buildVector(sidecar, 0);
 
   fs.mkdirSync(outDir, { recursive: true });
   const vectorFile = path.join(outDir, "reward_sidecar_vector.json");
@@ -231,8 +234,9 @@ async function main() {
     recipients,
     payoutCount: N,
     totalPayout: totalPayout.toString(),
-    disputeId: publicSignals[19],
-    finalStateRoot: publicSignals[20],
+    disputeId: publicSignals[27],
+    finalStateRoot: publicSignals[28],
+    rewardRandomness: publicSignals[29],
     proofGenerationMs,
   };
   writeJson(fixtureFile, fixture);
@@ -240,6 +244,7 @@ async function main() {
   const summary = {
     pollId: inputs.disputeId.toString(),
     finalRewardStateRoot: vector.finalStateRoot,
+    rewardRandomness: inputs.randomness.toString(),
     reports: inputs.reports,
     maciStateIndices: inputs.maciStateIndices.map((value) => value.toString()),
     tallyPayouts: amounts,

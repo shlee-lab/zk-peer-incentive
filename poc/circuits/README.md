@@ -9,12 +9,15 @@ It verifies lottery payouts for hidden binary reports and private nonces using:
 - inverse-frequency peer agreement;
 - ring peer matching, `peer(i) = i+1 mod N`;
 - integer floor payouts via quotient/remainder constraints.
-- Poseidon seed `H(nonces..., disputeId, finalStateRoot)`;
+- Poseidon seed `H(nonces..., disputeId, finalStateRoot, rewardRandomness)`;
 - per-voter draw `H(seed, i)` with low 32 bits used as the lottery draw.
 - Poseidon nonce commitments `H(nonce_i, 0)`;
 - Poseidon reward sidecar leaves
-  `H(maciStateIndex_i, voterId_i, report_i, nonceCommitment_i, stake_i)`;
+  `H(maciStateIndex_i, voterId_i, report_i, nonceCommitment_i, stake_i, recipient_i)`;
 - fixed-position Merkle openings for all 8 voters to `finalStateRoot`.
+- public recipient addresses bound to the sidecar leaves;
+- explicit range checks for public stakes, parameters, payouts, recipients,
+  expected rewards, and division remainders.
 
 ## Current Scope
 
@@ -71,3 +74,18 @@ The generated verifier is wired into `RewardPool` through
 The integrated registry/reward-pool flow on Anvil uses this circuit and requires
 a registry entry marked with verified MACI tally status before rewards can be
 finalized.
+
+The public input vector has 31 values:
+
+```text
+payouts[0..7]
+recipients[8..15]
+stakes[16..23]
+smoothing[24]
+kappa[25]
+scale[26]
+disputeId[27]
+finalStateRoot[28]
+rewardRandomness[29]
+rhoTau[30]
+```
