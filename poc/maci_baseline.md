@@ -116,3 +116,56 @@ public signals.
 
 This remains experimental. The MACI baseline is real; the reward sidecar binding
 is a PoC adapter and is not a production security claim.
+
+## Full MACI Plus Reward Sidecar Command
+
+After the reward v2 circuit artifacts and Foundry artifacts exist in this repo,
+the combined local flow can be run from `poc/`:
+
+```sh
+MACI_REPO=/tmp/maci-official npm run e2e:full-maci-reward
+```
+
+The script writes a generated ts-mocha test into the official MACI checkout and
+runs it with Node `v20.20.2`. It uses official MACI contracts, SDK helpers,
+circuits, test zkeys, and rapidsnark to:
+
+- deploy MACI on the official Hardhat local network;
+- sign up 8 voters and join all 8 to a poll;
+- publish 8 encrypted binary votes;
+- generate and submit message-processing and tally Groth16 proofs;
+- verify and submit the MACI tally;
+- derive binary reward reports from final MACI ballots;
+- generate a reward sidecar proof from those reports;
+- deploy this repo's reward contracts to the same local chain;
+- finalize rewards and claim one payout.
+
+Observed run:
+
+- Result: `1 passing (4m)`.
+- MACI tally: option 0 = `36`, option 1 = `36`.
+- Total spent voice credits: `648`.
+- Derived reports: `[1, 0, 1, 1, 0, 0, 1, 0]`.
+- Final reward sidecar root:
+  `12893428548190776266549336236808584256712764293578728169607695948123515639549`.
+- Reward winner index: `2`.
+- MACI proof phase: `113965 ms`.
+- Reward proof phase: `2849 ms`.
+- Reward finalization gas: `464247`.
+- Reward claim gas: `30662`.
+
+Generated reward artifacts are under `poc/artifacts/full_maci_reward/` and are
+not committed.
+
+## Anvil Status
+
+The reward contracts have a separate Anvil E2E script:
+
+```sh
+npm run e2e:anvil
+```
+
+The full official MACI plus reward script currently runs on the official MACI
+Hardhat test harness, not Anvil. The official SDK/test deployment path used here
+is Hardhat-centered; running the same full MACI flow on Anvil requires additional
+external-network wiring for the official MACI deployment/proof submission flow.

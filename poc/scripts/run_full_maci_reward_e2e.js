@@ -1,0 +1,434 @@
+"use strict";
+
+const fs = require("fs");
+const path = require("path");
+const { spawnSync } = require("child_process");
+
+const projectRoot = path.resolve(__dirname, "../..");
+const pocRoot = path.join(projectRoot, "poc");
+const maciRepo = path.resolve(process.env.MACI_REPO || "/tmp/maci-official");
+const nodeVersion = process.env.MACI_NODE_VERSION || "20.20.2";
+const generatedTestPath = path.join(
+  maciRepo,
+  "packages/testing/ts/__tests__/zk_peer_reward_sidecar.generated.test.ts",
+);
+
+function shellQuote(value) {
+  return `'${String(value).replace(/'/g, "'\\''")}'`;
+}
+
+function requirePath(target, message) {
+  if (!fs.existsSync(target)) {
+    throw new Error(`${message}: ${target}`);
+  }
+}
+
+function generatedTestSource() {
+  return `import { getSigners } from "@maci-protocol/contracts";
+import { EMode, VOTE_OPTION_TREE_ARITY } from "@maci-protocol/core";
+import { generateRandomSalt } from "@maci-protocol/crypto";
+import { Keypair } from "@maci-protocol/domainobjs";
+import {
+  DEFAULT_IVCP_DATA,
+  DEFAULT_SG_DATA,
+  DEFAULT_INITIAL_VOICE_CREDITS,
+  coordinatorKeypair,
+  coordinatorPrivateKey,
+  deployArgs,
+  deployPollArgs,
+  mergeSignupsArgs,
+  pollDuration,
+  proveOnChainArgs,
+  testPollJoiningWasmPath,
+  testPollJoiningWitnessPath,
+  testPollJoiningZkeyPath,
+  testProcessMessageZkeyPath,
+  testProcessMessagesWasmPath,
+  testProcessMessagesWitnessDatPath,
+  testProcessMessagesWitnessPath,
+  testProofsDirPath,
+  testRapidsnarkPath,
+  testTallyFilePath,
+  testTallyVotesWasmPath,
+  testTallyVotesWitnessDatPath,
+  testTallyVotesWitnessPath,
+  testTallyVotesZkeyPath,
+  timeTravelArgs,
+  verifyingKeysArgs,
+  verifyArgs,
+} from "../constants";
+import {
+  deployConstantInitialVoiceCreditProxy,
+  deployConstantInitialVoiceCreditProxyFactory,
+  deployFreeForAllSignUpPolicy,
+  deployMaci,
+  deployPoll,
+  generateMaciState,
+  generateProofs,
+  getBlockTimestamp,
+  isArm,
+  joinPoll,
+  mergeSignups,
+  proveOnChain,
+  publish,
+  setVerifyingKeys,
+  signup,
+  timeTravel,
+  verify,
+  type IGenerateProofsArgs,
+  type IMaciContracts,
+} from "@maci-protocol/sdk";
+import { ethers, type Signer } from "ethers";
+import { execFileSync } from "child_process";
+import { expect } from "chai";
+import fs from "fs";
+import path from "path";
+
+const PROJECT_ROOT = ${JSON.stringify(projectRoot)};
+const POC_ROOT = path.join(PROJECT_ROOT, "poc");
+const OUTPUT_ROOT = path.join(POC_ROOT, "artifacts/full_maci_reward");
+const REPORTS = [1, 0, 1, 1, 0, 0, 1, 0];
+const STAKES = ["10", "20", "10", "15", "5", "10", "15", "15"];
+
+function readJson(file: string): any {
+  return JSON.parse(fs.readFileSync(file, "utf8"));
+}
+
+function artifact(contractFile: string, contractName: string): { abi: any; bytecode: string } {
+  const file = path.join(POC_ROOT, "out", contractFile, \`\${contractName}.json\`);
+  if (!fs.existsSync(file)) {
+    throw new Error(\`missing artifact \${file}; run forge build in poc/ first\`);
+  }
+  const data = readJson(file);
+  return {
+    abi: data.abi,
+    bytecode: data.bytecode.object || data.bytecode,
+  };
+}
+
+async function deployRewardContract(label: string, signer: Signer, contractFile: string, contractName: string, args: any[] = []) {
+  const art = artifact(contractFile, contractName);
+  const factory = new ethers.ContractFactory(art.abi, art.bytecode, signer);
+  const contract = await factory.deploy(...args);
+  const deployment = await contract.deploymentTransaction()?.wait();
+  const address = await contract.getAddress();
+  console.log(\`\${label}: address=\${address} tx=\${deployment?.hash} gas=\${deployment?.gasUsed.toString()}\`);
+  return contract;
+}
+
+async function waitTx(label: string, tx: any) {
+  const receipt = await tx.wait();
+  console.log(\`\${label}: tx=\${receipt.hash} gas=\${receipt.gasUsed.toString()}\`);
+  return receipt;
+}
+
+function encodeProof(proof: any): string {
+  const a = [proof.pi_a[0], proof.pi_a[1]];
+  const b = [
+    [proof.pi_b[0][1], proof.pi_b[0][0]],
+    [proof.pi_b[1][1], proof.pi_b[1][0]],
+  ];
+  const c = [proof.pi_c[0], proof.pi_c[1]];
+  return ethers.AbiCoder.defaultAbiCoder().encode(
+    ["uint256[2]", "uint256[2][2]", "uint256[2]"],
+    [a, b, c],
+  );
+}
+
+function resetMaciOutputs() {
+  fs.rmSync(testProofsDirPath, { recursive: true, force: true });
+  fs.mkdirSync(testProofsDirPath, { recursive: true });
+  fs.rmSync(testTallyFilePath, { force: true });
+  fs.rmSync("./backup", { recursive: true, force: true });
+  fs.rmSync(OUTPUT_ROOT, { recursive: true, force: true });
+  fs.mkdirSync(OUTPUT_ROOT, { recursive: true });
+}
+
+async function deployMaciStack(signer: Signer): Promise<IMaciContracts> {
+  const constantInitialVoiceCreditProxyFactory = await deployConstantInitialVoiceCreditProxyFactory(signer, true);
+  const initialVoiceCreditProxy = await deployConstantInitialVoiceCreditProxy(
+    { amount: DEFAULT_INITIAL_VOICE_CREDITS },
+    constantInitialVoiceCreditProxyFactory,
+    signer,
+  );
+  const initialVoiceCreditProxyContractAddress = await initialVoiceCreditProxy.getAddress();
+
+  const [signupPolicy, , signupPolicyFactory, signupCheckerFactory] = await deployFreeForAllSignUpPolicy(
+    {},
+    signer,
+    true,
+  );
+  const signupPolicyContractAddress = await signupPolicy.getAddress();
+  const [pollPolicy] = await deployFreeForAllSignUpPolicy(
+    { policy: signupPolicyFactory, checker: signupCheckerFactory },
+    signer,
+    true,
+  );
+  const pollPolicyContractAddress = await pollPolicy.getAddress();
+
+  const maciAddresses = await deployMaci({
+    ...deployArgs,
+    signer,
+    signupPolicyAddress: signupPolicyContractAddress,
+  });
+
+  await setVerifyingKeys({
+    ...(await verifyingKeysArgs(signer)),
+    verifyingKeysRegistryAddress: maciAddresses.verifyingKeysRegistryContractAddress,
+  });
+
+  const startDate = await getBlockTimestamp(signer);
+  await deployPoll({
+    ...deployPollArgs,
+    signer,
+    pollStartTimestamp: startDate,
+    pollEndTimestamp: startDate + pollDuration,
+    relayers: [await signer.getAddress()],
+    maciAddress: maciAddresses.maciContractAddress,
+    policyContractAddress: pollPolicyContractAddress,
+    initialVoiceCreditProxyContractAddress,
+  });
+
+  return maciAddresses;
+}
+
+function generateRewardProof(sidecarFile: string, rewardOutDir: string, fixtureFile: string) {
+  execFileSync(
+    "node",
+    [
+      path.join(POC_ROOT, "scripts/build_sidecar_reward_artifacts.js"),
+      "--sidecar",
+      sidecarFile,
+      "--out-dir",
+      rewardOutDir,
+      "--fixture",
+      fixtureFile,
+    ],
+    { cwd: POC_ROOT, stdio: "inherit" },
+  );
+}
+
+describe("full MACI plus reward sidecar E2E", function test() {
+  this.timeout(900000);
+
+  it("runs official MACI tally proofs, derives reward sidecar state, finalizes, and claims", async () => {
+    resetMaciOutputs();
+    const useWasm = isArm();
+    const signers = await getSigners();
+    const [signer, ...userSigners] = signers;
+    const users = Array.from({ length: 8 }, () => new Keypair());
+
+    const generateProofsArgs: Omit<IGenerateProofsArgs, "maciAddress" | "signer"> = {
+      outputDir: testProofsDirPath,
+      tallyFile: testTallyFilePath,
+      voteTallyZkey: testTallyVotesZkeyPath,
+      messageProcessorZkey: testProcessMessageZkeyPath,
+      pollId: 0n,
+      rapidsnark: testRapidsnarkPath,
+      messageProcessorWitnessGenerator: testProcessMessagesWitnessPath,
+      messageProcessorWitnessDatFile: testProcessMessagesWitnessDatPath,
+      voteTallyWitnessGenerator: testTallyVotesWitnessPath,
+      voteTallyWitnessDatFile: testTallyVotesWitnessDatPath,
+      coordinatorPrivateKey,
+      messageProcessorWasm: testProcessMessagesWasmPath,
+      voteTallyWasm: testTallyVotesWasmPath,
+      useWasm,
+      mode: EMode.QV,
+    };
+
+    const maciAddresses = await deployMaciStack(signer);
+    console.log(\`MACI: address=\${maciAddresses.maciContractAddress}\`);
+
+    for (let i = 0; i < users.length; i += 1) {
+      await signup({
+        maciAddress: maciAddresses.maciContractAddress,
+        maciPublicKey: users[i].publicKey.serialize(),
+        sgData: DEFAULT_SG_DATA,
+        signer: userSigners[i],
+      });
+    }
+
+    for (let i = 0; i < users.length; i += 1) {
+      await joinPoll({
+        maciAddress: maciAddresses.maciContractAddress,
+        privateKey: users[i].privateKey.serialize(),
+        pollId: 0n,
+        pollJoiningZkey: testPollJoiningZkeyPath,
+        useWasm,
+        pollJoiningWasm: testPollJoiningWasmPath,
+        pollWitnessGenerator: testPollJoiningWitnessPath,
+        rapidsnark: testRapidsnarkPath,
+        sgDataArg: DEFAULT_SG_DATA,
+        ivcpDataArg: DEFAULT_IVCP_DATA,
+        signer: userSigners[i],
+      });
+    }
+
+    for (let i = 0; i < users.length; i += 1) {
+      await publish({
+        maciAddress: maciAddresses.maciContractAddress,
+        publicKey: users[i].publicKey.serialize(),
+        stateIndex: BigInt(i + 1),
+        voteOptionIndex: BigInt(REPORTS[i]),
+        nonce: 1n,
+        pollId: 0n,
+        newVoteWeight: 9n,
+        salt: generateRandomSalt(),
+        privateKey: users[i].privateKey.serialize(),
+        signer,
+      });
+    }
+
+    const maciProofStarted = Date.now();
+    await timeTravel({ ...timeTravelArgs, signer });
+    await mergeSignups({ ...mergeSignupsArgs, maciAddress: maciAddresses.maciContractAddress, signer });
+    const { tallyData } = await generateProofs({
+      ...generateProofsArgs,
+      signer,
+      maciAddress: maciAddresses.maciContractAddress,
+    });
+    await proveOnChain({ ...proveOnChainArgs, maciAddress: maciAddresses.maciContractAddress, signer });
+    await verify({ ...(await verifyArgs(signer)), tallyData, maciAddress: tallyData.maci });
+    const maciProofMs = Date.now() - maciProofStarted;
+
+    const maciState = await generateMaciState({
+      pollId: 0n,
+      maciAddress: maciAddresses.maciContractAddress,
+      coordinatorPrivateKey,
+      signer,
+    });
+    const poll = maciState.polls.get(0n);
+    if (!poll) {
+      throw new Error("poll 0 missing from reconstructed MACI state");
+    }
+    while (poll.hasUnprocessedMessages()) {
+      poll.processMessages(0n);
+    }
+    while (poll.hasUntalliedBallots()) {
+      poll.tallyVotes();
+    }
+
+    const extractedReports = REPORTS.map((_, i) => (poll.ballots[i + 1].votes[1] > 0n ? 1 : 0));
+    expect(extractedReports).to.deep.eq(REPORTS);
+
+    const recipients = await Promise.all(REPORTS.map((_, i) => userSigners[i].getAddress()));
+    const sidecar = {
+      pollId: "0",
+      disputeId: "0",
+      reports: extractedReports,
+      maciStateIndices: REPORTS.map((_, i) => String(i + 1)),
+      voterIds: REPORTS.map((_, i) => poll.pollStateLeaves[i + 1].hash().toString()),
+      stakes: STAKES,
+      recipients,
+      smoothing: "1",
+      kappa: "100",
+      scale: "1000",
+      rhoTau: "3000000",
+      lotteryBits: 32,
+      nonceLabel: "full-maci-reward-sidecar",
+    };
+    const sidecarFile = path.join(OUTPUT_ROOT, "sidecar_input.json");
+    const rewardOutDir = path.join(OUTPUT_ROOT, "reward");
+    const fixtureFile = path.join(rewardOutDir, "reward_proof_fixture.json");
+    fs.writeFileSync(sidecarFile, JSON.stringify(sidecar, null, 2));
+    generateRewardProof(sidecarFile, rewardOutDir, fixtureFile);
+    const fixture = readJson(fixtureFile);
+
+    const disputeId = BigInt(fixture.disputeId);
+    const finalRewardStateRoot = BigInt(fixture.finalStateRoot);
+    const totalPayout = BigInt(fixture.totalPayout);
+    expect(totalPayout).to.be.greaterThan(0n);
+
+    const rewardVerifier = await deployRewardContract(
+      "RewardGroth16Verifier",
+      signer,
+      "RewardGroth16Verifier.sol",
+      "Groth16Verifier",
+    );
+    const rewardVerifierAddress = await rewardVerifier.getAddress();
+    const adapter = await deployRewardContract(
+      "RewardVerifierAdapter",
+      signer,
+      "RewardVerifierAdapter.sol",
+      "RewardVerifierAdapter",
+      [rewardVerifierAddress],
+    );
+    const adapterAddress = await adapter.getAddress();
+    const registry = await deployRewardContract("FinalStateRegistry", signer, "FinalStateRegistry.sol", "FinalStateRegistry");
+    const registryAddress = await registry.getAddress();
+    const pool = await deployRewardContract(
+      "IntegratedRewardPool",
+      signer,
+      "IntegratedRewardPool.sol",
+      "IntegratedRewardPool",
+      [adapterAddress, registryAddress],
+    );
+    const poolAddress = await pool.getAddress();
+
+    await waitTx("reward.registerFinalState", await registry.registerFinalState(disputeId, finalRewardStateRoot, BigInt(tallyData.results.tally[1])));
+    await waitTx("reward.fundDispute", await pool.fundDispute(disputeId, { value: totalPayout }));
+    await waitTx(
+      "reward.finalizeRewards",
+      await pool.finalizeRewards(
+        disputeId,
+        fixture.recipients,
+        fixture.amounts,
+        encodeProof(fixture.proof),
+        fixture.publicSignals,
+      ),
+    );
+
+    const winnerIndex = fixture.amounts.findIndex((amount: string) => BigInt(amount) > 0n);
+    expect(winnerIndex).to.be.greaterThanOrEqual(0);
+    const claimant = await userSigners[winnerIndex].getAddress();
+    expect(claimant).to.eq(fixture.recipients[winnerIndex]);
+    const claimable = await pool.claimable(disputeId, claimant);
+    await waitTx("reward.claim", await pool.connect(userSigners[winnerIndex]).claim(disputeId));
+
+    console.log(\`maciProofMs=\${maciProofMs}\`);
+    console.log(\`rewardProofMs=\${fixture.proofGenerationMs}\`);
+    console.log(\`maciTally0=\${tallyData.results.tally[0]} maciTally1=\${tallyData.results.tally[1]}\`);
+    console.log(\`reports=\${extractedReports.join(",")}\`);
+    console.log(\`finalRewardStateRoot=\${fixture.finalStateRoot}\`);
+    console.log(\`rewardPool=\${poolAddress}\`);
+    console.log(\`winnerIndex=\${winnerIndex}\`);
+    console.log(\`claimant=\${claimant}\`);
+    console.log(\`claimableBefore=\${claimable.toString()}\`);
+    console.log(\`poolBalanceAfter=\${(await signer.provider!.getBalance(poolAddress)).toString()}\`);
+  });
+});
+`;
+}
+
+function main() {
+  requirePath(maciRepo, "MACI_REPO does not exist");
+  requirePath(path.join(maciRepo, "pnpm-lock.yaml"), "MACI_REPO is not an official MACI checkout");
+  requirePath(path.join(pocRoot, "out/RewardGroth16Verifier.sol/Groth16Verifier.json"), "missing reward verifier artifact; run forge build");
+  requirePath(path.join(pocRoot, "artifacts/v2/reward_check_final.zkey"), "missing reward zkey; run the v2 proof setup first");
+
+  fs.writeFileSync(generatedTestPath, generatedTestSource());
+  console.log(`Wrote ${generatedTestPath}`);
+
+  const command = [
+    `if [ -s "$HOME/.nvm/nvm.sh" ]; then source "$HOME/.nvm/nvm.sh" && nvm use ${shellQuote(nodeVersion)}; fi`,
+    "node -v",
+    `pnpm --filter @maci-protocol/testing exec ts-mocha --exit ${shellQuote(generatedTestPath)}`,
+  ].join(" && ");
+
+  const result = spawnSync("bash", ["-lc", command], {
+    cwd: maciRepo,
+    env: process.env,
+    stdio: "inherit",
+  });
+
+  if (result.status !== 0) {
+    throw new Error("full MACI reward E2E failed");
+  }
+}
+
+try {
+  main();
+} catch (err) {
+  console.error(err);
+  process.exit(1);
+}

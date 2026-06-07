@@ -18,6 +18,24 @@ encrypted vote publication, message processing, tally proof generation, on-chain
 proof submission, and tally verification, then selects the unmodified-MACI
 reward sidecar path.
 
+## Architecture
+
+```text
+official MACI contracts/circuits/SDK
+  -> signup, join poll, encrypted vote publish
+  -> message processing proof
+  -> tally proof and on-chain tally verification
+  -> final MACI ballots / poll state exposed off-chain to the coordinator
+  -> reward sidecar root over binary reports, MACI state indices, nonce commitments, and stakes
+  -> reward Groth16 proof
+  -> FinalStateRegistry + IntegratedRewardPool
+  -> claimable payouts
+```
+
+The MACI flow is real and unmodified. The reward sidecar is experimental glue:
+it derives binary reports from final MACI ballots and proves payout correctness
+against a sidecar root.
+
 ## Milestones
 
 ### M0. Scope
@@ -265,12 +283,77 @@ v3 limitations:
 Not included in the reward E2E in this repo:
 
 - vendored or modified MACI contracts/circuits;
-- a single combined script that runs official MACI and reward finalization
-  together;
+- Anvil deployment of the official MACI stack;
 - proof that a voter actually exerted effort;
 - coordinator privacy;
 - Sybil defense;
 - production receipt-freeness.
+
+### M4. Full MACI Plus Reward Sidecar E2E
+
+The full integration script runs inside the official MACI Hardhat test harness
+and then deploys this repo's reward contracts to the same local Hardhat chain.
+
+It performs:
+
+- deploy official MACI contracts;
+- sign up 8 voters;
+- join all 8 voters to a poll;
+- publish 8 encrypted binary votes;
+- generate and submit real MACI message-processing and tally proofs;
+- verify the MACI tally on-chain;
+- reconstruct final MACI poll state and derive binary reports from final
+  ballots;
+- build `finalRewardStateRoot`;
+- generate and locally verify the reward Groth16 proof;
+- deploy `RewardGroth16Verifier`, `RewardVerifierAdapter`,
+  `FinalStateRegistry`, and `IntegratedRewardPool`;
+- register the reward sidecar root with verified MACI tally status;
+- finalize payouts and claim one winning reward.
+
+Command:
+
+```bash
+MACI_REPO=/tmp/maci-official npm run e2e:full-maci-reward
+```
+
+Prerequisites:
+
+- official MACI repo prepared as described in `maci_baseline.md`;
+- reward v2 circuit artifacts under `artifacts/v2/`;
+- `forge build` already run so reward contract artifacts exist under `out/`.
+
+Observed local run:
+
+- MACI tally: option 0 = `36`, option 1 = `36`;
+- MACI total spent voice credits: `648`;
+- derived reports: `[1, 0, 1, 1, 0, 0, 1, 0]`;
+- `finalRewardStateRoot`:
+  `12893428548190776266549336236808584256712764293578728169607695948123515639549`;
+- reward winner index: `2`;
+- MACI proof phase: `113965 ms`;
+- reward proof phase: `2849 ms`;
+- reward finalize gas: `464247`;
+- claim gas: `30662`.
+
+Generated full-integration reward artifacts are written under:
+
+- `artifacts/full_maci_reward/sidecar_input.json`
+- `artifacts/full_maci_reward/reward/reward_sidecar_vector.json`
+- `artifacts/full_maci_reward/reward/input.json`
+- `artifacts/full_maci_reward/reward/proof.json`
+- `artifacts/full_maci_reward/reward/public.json`
+- `artifacts/full_maci_reward/reward/reward_proof_fixture.json`
+- `artifacts/full_maci_reward/reward/summary.json`
+
+Current Anvil status:
+
+- `npm run e2e:anvil` runs the reward registry/pool finalize-and-claim flow on
+  Anvil with a real reward proof.
+- `npm run e2e:full-maci-reward` runs full official MACI plus reward on the
+  official MACI Hardhat harness. The official MACI SDK/test deployment path used
+  here is Hardhat-centered; wiring the full MACI deployment to Anvil remains
+  future integration work.
 
 ### Reference Model
 
@@ -337,10 +420,11 @@ The v3 PoC supports the limited claim:
 > Lottery peer-prediction payouts can be represented as a ZK-verifiable relation
 > over hidden reports/nonces, bound to a MACI reward sidecar root, and used in an
 > integrated local finalize-and-claim reward flow with a real Solidity Groth16
-> verifier. A separate pinned official MACI baseline demonstrates the unmodified
-> MACI signup, encrypted voting, processing, tally proof, and tally verification
-> flow that the sidecar is intended to attach to.
+> verifier. A pinned official MACI baseline and integration script demonstrate
+> the unmodified MACI signup, encrypted voting, processing, tally proof, tally
+> verification, reward sidecar proof, reward finalization, and reward claim flow
+> on a local Hardhat chain.
 
 It does not prove effort exertion. Effort remains a game-theoretic incentive
-claim from the model. The current reward E2E does not yet run the official MACI
-flow and reward finalization in one combined script.
+claim from the model. The full official MACI deployment has not yet been wired
+to Anvil; Anvil is currently covered by the reward-contract E2E flow.
