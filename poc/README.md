@@ -1,157 +1,292 @@
 # ZK Peer-Prediction Reward PoC
 
-This PoC implements the engineering path for the reward layer described in
-`../WINE_MODEL_NOTES.md`.
+This repository contains an experimental prototype for adding a
+privacy-preserving reward layer to a MACI voting flow.
 
-This repo keeps the reward layer modular. The official MACI stack is used as a
-separate pinned baseline; the reward circuit and contracts here do not rewrite
-MACI. The goal is to show that peer-prediction reward computation can be
-verified over hidden reports and that a Solidity payout contract can be gated by
-such a proof.
-
-## Full MACI Baseline
-
-The experimental real-MACI baseline is recorded in `maci_baseline.md`.
-It uses the official MACI repository at pinned commit
-`22106c8a2015f18709a32208ad2ad40b6f3fa8a5`, runs real local MACI signup,
-encrypted vote publication, message processing, tally proof generation, on-chain
-proof submission, and tally verification, then selects the unmodified-MACI
-reward sidecar path.
-
-## Architecture
+In plain terms:
 
 ```text
-official MACI contracts/circuits/SDK
-  -> signup, join poll, encrypted vote publish
-  -> message processing proof
-  -> tally proof and on-chain tally verification
-  -> final MACI ballots / poll state exposed off-chain to the coordinator
-  -> reward sidecar root over binary reports, MACI state indices, nonce commitments, and stakes
-  -> reward Groth16 proof
-  -> FinalStateRegistry + IntegratedRewardPool
-  -> claimable payouts
+private MACI votes
+  -> verified MACI tally
+  -> hidden binary reports derived from final MACI ballots
+  -> ZK-verified peer-prediction lottery rewards
+  -> on-chain reward finalization
+  -> winner claim
 ```
 
-The MACI flow is real and unmodified. The reward sidecar is experimental glue:
-it derives binary reports from final MACI ballots and proves payout correctness
-against a sidecar root.
+The prototype is for research feasibility. It is not production-audited and does
+not claim to improve MACI's core privacy or security.
 
-## Milestones
+## Purpose
 
-### M0. Scope
+MACI can prove that encrypted votes were processed and tallied correctly without
+revealing each voter's individual vote.
 
-Baseline v0 scope:
+This PoC asks a follow-up question:
 
-- binary reports;
-- public stakes;
-- smoothed stake-weighted leave-one-out frequency;
-- inverse-frequency peer agreement;
-- fixed-point public payouts;
-- ring peer matching in the circuit draft;
-- generic Solidity verifier interface.
+> Can a reward mechanism be attached to that private final voting state, so that
+> rewards are verifiably correct without revealing the hidden reports?
 
-### M1. Lottery Reward Proof
+The current answer demonstrated by the code is:
 
-v1 adds a real lottery payout proof:
+> Yes, as an experimental reward sidecar. Unmodified official MACI handles
+> voting and tallying; a separate reward proof proves that the payout vector was
+> computed correctly from reports bound to a MACI-derived reward state root.
 
-- private binary reports;
-- public stakes;
-- private high-entropy nonces;
-- Poseidon seed `H(nonce_0, ..., nonce_7, disputeId, stateRoot)`;
-- per-voter draw `H(seed, i)`, using the low 32 bits as the PoC lottery draw;
-- fixed-point expected reward from the inverse-frequency peer-agreement rule;
-- public payout `rhoTau` when `draw_i * rhoTau < expected_i * 2^32`, else zero;
-- Groth16 proof verified locally by `snarkjs`;
-- generated Solidity verifier checked through `RewardVerifierAdapter` and `RewardPool` in Foundry.
+## What It Does
 
-The committed deterministic vector is:
+The system currently supports:
 
-- `vectors/v1/reward_lottery.json`
+- real official MACI local flow:
+  - voter signup;
+  - poll join;
+  - encrypted vote publication;
+  - MACI message-processing proof generation and on-chain submission;
+  - MACI tally proof generation and on-chain verification;
+- reward sidecar state:
+  - derives binary reports from final MACI ballots;
+  - binds reports to `maciStateIndex`, voter identity value, nonce commitment,
+    and public stake;
+  - commits those leaves into a Merkle root;
+- reward proof:
+  - proves hidden reports and nonces are bound to the reward sidecar root;
+  - computes inverse-frequency peer-agreement rewards;
+  - converts expected rewards into lottery payouts;
+  - exposes public payout values, poll/dispute id, and reward state root;
+- Solidity reward flow:
+  - verifies the generated Groth16 proof on-chain;
+  - checks the proof root matches the registered reward state root;
+  - records claimable rewards;
+  - allows winners to claim.
 
-Generated local proving artifacts are written under:
+## System Components
 
-- `artifacts/v1/input.json`
-- `artifacts/v1/reward_check.r1cs`
-- `artifacts/v1/reward_check_js/reward_check.wasm`
-- `artifacts/v1/witness.wtns`
-- `artifacts/v1/proof.json`
-- `artifacts/v1/public.json`
-- `artifacts/v1/verification_key.json`
-- `artifacts/v1/reward_check_final.zkey`
+### Official MACI
 
-`artifacts/` is ignored because these files are large and reproducible.
+The MACI side uses the official repository:
 
-#### v1 Commands
+- repo: `https://github.com/privacy-scaling-explorations/maci`
+- pinned commit: `22106c8a2015f18709a32208ad2ad40b6f3fa8a5`
+- package version at that commit: `maci@3.0.0`
 
-From `poc/`:
+MACI is not vendored into this repo. The integration script expects an external
+checkout, usually at `/tmp/maci-official`.
 
-```bash
-npm install
-npm run generate:v1
-npm run test:reference
+MACI provides:
 
-mkdir -p artifacts/v1
-circom circuits/reward_check.circom --r1cs --wasm --sym -o artifacts/v1
-npx snarkjs wtns calculate artifacts/v1/reward_check_js/reward_check.wasm artifacts/v1/input.json artifacts/v1/witness.wtns
-npx snarkjs wtns check artifacts/v1/reward_check.r1cs artifacts/v1/witness.wtns
+- encrypted voting;
+- message processing proof;
+- tally proof;
+- on-chain tally verification;
+- final off-chain poll state from which the reward sidecar derives reports.
 
-npx snarkjs powersoftau new bn128 14 artifacts/v1/pot14_0000.ptau
-npx snarkjs powersoftau contribute artifacts/v1/pot14_0000.ptau artifacts/v1/pot14_0001.ptau --name="v1 dev contribution" -e="zk-peer-incentive-v1-pot"
-npx snarkjs powersoftau prepare phase2 artifacts/v1/pot14_0001.ptau artifacts/v1/pot14_final.ptau
-npx snarkjs groth16 setup artifacts/v1/reward_check.r1cs artifacts/v1/pot14_final.ptau artifacts/v1/reward_check_0000.zkey
-npx snarkjs zkey contribute artifacts/v1/reward_check_0000.zkey artifacts/v1/reward_check_final.zkey --name="v1 dev zkey" -e="zk-peer-incentive-v1-zkey"
-npx snarkjs zkey verify artifacts/v1/reward_check.r1cs artifacts/v1/pot14_final.ptau artifacts/v1/reward_check_final.zkey
-npx snarkjs zkey export verificationkey artifacts/v1/reward_check_final.zkey artifacts/v1/verification_key.json
-npx snarkjs groth16 prove artifacts/v1/reward_check_final.zkey artifacts/v1/witness.wtns artifacts/v1/proof.json artifacts/v1/public.json
-npx snarkjs groth16 verify artifacts/v1/verification_key.json artifacts/v1/public.json artifacts/v1/proof.json
-npx snarkjs zkey export solidityverifier artifacts/v1/reward_check_final.zkey contracts/RewardGroth16Verifier.sol
-node scripts/export_solidity_fixture.js artifacts/v1/proof.json artifacts/v1/public.json vectors/v1/reward_lottery.json test/RewardProofFixture.sol
+### Reward Sidecar
 
-forge build
-forge test -vvv
-```
+The reward sidecar is the new part in this PoC.
 
-Observed v1 circuit size:
-
-- 9,643 non-linear constraints;
-- 22 public inputs;
-- 32 private inputs.
-
-v1 limitations:
-
-- `stateRoot` is only seed context in v1; it is not yet proven to contain reports/nonces.
-- Peer assignment is fixed as a ring, `peer(i) = i + 1 mod N`.
-- `N = 8` is fixed.
-- The Groth16 ceremony is local development setup only.
-- The low-32-bit draw extraction is a simple PoC choice, not a production randomness design.
-
-### M2. MACI Reward Sidecar State Adapter
-
-v2 binds the hidden reward inputs to a reward sidecar root designed to be derived
-from unmodified MACI final poll state. MACI message processing remains in the
-official baseline from M0.
-
-Reward sidecar nonce commitments and leaves are:
+For each voter, the sidecar leaf is:
 
 ```text
 nonceCommitment_i = Poseidon(nonce_i, 0)
 leaf_i = Poseidon(maciStateIndex_i, voterId_i, report_i, nonceCommitment_i, stake_i)
 ```
 
-The circuit verifies a fixed-position Merkle opening for each of the 8 leaves
-and requires every path to end at the public `finalStateRoot`
-(`finalRewardStateRoot` in the MACI sidecar plan). The same root is also used as
-lottery seed context, so the proof binds:
+The Merkle root of these leaves is the public reward state root.
+
+The reward proof says:
 
 ```text
-hidden reports/nonces used for rewards == reports/nonce commitments committed in the reward sidecar state
+I know hidden reports and nonces such that:
+1. each report is binary;
+2. each nonce opens to its nonce commitment;
+3. all leaves are included in the public reward state root;
+4. the public payout vector follows the peer-prediction lottery rule.
 ```
 
-The committed deterministic vector is:
+### Reward Contracts
+
+Important contracts:
+
+- `RewardGroth16Verifier.sol`: generated snarkjs verifier for the reward
+  circuit.
+- `RewardVerifierAdapter.sol`: adapts `bytes` proof input to the generated
+  verifier ABI.
+- `FinalStateRegistry.sol`: stores `poll/dispute id`, reward state root, tally
+  placeholder, and MACI tally verification status.
+- `IntegratedRewardPool.sol`: verifies reward proof, finalizes payout amounts,
+  and lets winners claim.
+
+The reward payout flow is pull-based:
+
+```text
+finalizeRewards() -> records claimable balances
+claim()           -> each winner withdraws their own balance
+```
+
+This avoids sending ETH to every recipient during finalization.
+
+## Reward Rule
+
+The PoC uses:
+
+- binary reports: `0` or `1`;
+- fixed `N = 8`;
+- public stakes;
+- ring peer matching: `peer(i) = i + 1 mod N`;
+- smoothed leave-one-out inverse-frequency peer agreement;
+- high-entropy private nonces;
+- a lottery draw from `Poseidon(seed, i)`.
+
+The lottery seed is:
+
+```text
+seed = Poseidon(nonce_0, ..., nonce_7, pollId, finalRewardStateRoot)
+```
+
+Each participant either receives:
+
+```text
+rhoTau
+```
+
+or:
+
+```text
+0
+```
+
+depending on whether their lottery draw falls below the threshold implied by
+their expected peer-prediction reward.
+
+## How To Run
+
+### Reward-Only Anvil Flow
+
+This checks the generated reward proof and reward contracts on Anvil.
+
+```bash
+cd poc
+forge build
+forge test -vvv
+npm run e2e:anvil
+```
+
+The script starts Anvil automatically if `RPC_URL` is not set.
+
+### Full MACI + Reward On Anvil
+
+This runs official MACI and the reward layer on an Anvil JSON-RPC chain.
+
+Prerequisites:
+
+- official MACI repo prepared at `/tmp/maci-official`;
+- Node `v20.20.2` available through `nvm`;
+- MACI test zkeys downloaded;
+- rapidsnark installed as described in `maci_baseline.md`;
+- Foundry tools `forge`, `anvil`, and `cast` available;
+- reward circuit artifacts already generated under `artifacts/v2/`.
+
+Command:
+
+```bash
+cd poc
+MACI_REPO=/tmp/maci-official npm run e2e:full-maci-reward:anvil
+```
+
+What it does:
+
+- starts Anvil on `http://127.0.0.1:8556`;
+- temporarily points the official MACI testing config at that Anvil RPC;
+- deploys official MACI contracts;
+- signs up and joins 8 voters;
+- publishes 8 encrypted votes;
+- generates and submits MACI proofs;
+- verifies MACI tally;
+- derives reward sidecar state;
+- generates reward proof;
+- deploys reward contracts;
+- finalizes rewards;
+- claims one winning payout;
+- restores the official MACI testing config afterward.
+
+### Full MACI + Reward On MACI Hardhat Harness
+
+The same integration can run on the official MACI in-process Hardhat chain:
+
+```bash
+cd poc
+MACI_REPO=/tmp/maci-official npm run e2e:full-maci-reward
+```
+
+## Evaluation Results
+
+Latest successful full MACI + reward Anvil run:
+
+```text
+execution chain id: 31337
+MACI tally option 0: 36
+MACI tally option 1: 36
+total spent voice credits: 648
+derived reports: [1, 0, 1, 1, 0, 0, 1, 0]
+finalRewardStateRoot:
+  5467628283882597849812545621007549485893283266378756219242748369852677028795
+reward winner index: 4
+MACI proof phase: 120523 ms
+reward proof phase: 4560 ms
+```
+
+Reward-related gas from the Anvil run:
+
+```text
+registerFinalState   93,334 gas
+fundDispute          47,352 gas
+finalizeRewards     464,223 gas
+claim                30,662 gas
+```
+
+Reward contract deployment gas:
+
+```text
+RewardGroth16Verifier   773,176 gas
+RewardVerifierAdapter   328,329 gas
+FinalStateRegistry      365,305 gas
+IntegratedRewardPool  1,117,198 gas
+```
+
+Foundry tests:
+
+```text
+12 tests passed
+```
+
+The tests cover:
+
+- valid generated reward proof accepted on-chain;
+- wrong reward state root rejected;
+- wrong poll/dispute id rejected;
+- tampered payout rejected;
+- tampered proof rejected;
+- unverified MACI tally status rejected;
+- double finalization rejected;
+- winner claim succeeds;
+- double claim fails through cleared claimable balance.
+
+Circuit size:
+
+```text
+19,867 non-linear constraints
+22 public inputs
+80 private inputs
+```
+
+## Generated Artifacts
+
+Committed deterministic vectors:
 
 - `vectors/v2/reward_lottery_state.json`
+- `vectors/v2/reward_proof_fixture.json`
 
-Generated local proving artifacts are written under:
+Ignored reproducible artifacts:
 
 - `artifacts/v2/input.json`
 - `artifacts/v2/reward_check.r1cs`
@@ -161,288 +296,57 @@ Generated local proving artifacts are written under:
 - `artifacts/v2/public.json`
 - `artifacts/v2/verification_key.json`
 - `artifacts/v2/reward_check_final.zkey`
+- `artifacts/full_maci_reward_anvil/`
 
-#### v2 Commands
+The ignored artifacts are large or environment-specific and can be regenerated.
 
-From `poc/`:
+## Repository Map
 
-```bash
-npm run generate:v2
-npm run test:reference
+```text
+reference/reward_model.js
+  JavaScript reference model for reward computation, lottery payouts, and
+  Merkle sidecar state.
 
-mkdir -p artifacts/v2
-circom circuits/reward_check.circom --r1cs --wasm --sym -o artifacts/v2
-npx snarkjs wtns calculate artifacts/v2/reward_check_js/reward_check.wasm artifacts/v2/input.json artifacts/v2/witness.wtns
-npx snarkjs wtns check artifacts/v2/reward_check.r1cs artifacts/v2/witness.wtns
-npm run test:v2:circuit
+circuits/reward_check.circom
+  Circom reward relation proving payout correctness and reward state inclusion.
 
-npx snarkjs powersoftau new bn128 15 artifacts/v2/pot15_0000.ptau
-npx snarkjs powersoftau contribute artifacts/v2/pot15_0000.ptau artifacts/v2/pot15_0001.ptau --name="v2 dev contribution" -e="zk-peer-incentive-v2-pot"
-npx snarkjs powersoftau prepare phase2 artifacts/v2/pot15_0001.ptau artifacts/v2/pot15_final.ptau
-npx snarkjs groth16 setup artifacts/v2/reward_check.r1cs artifacts/v2/pot15_final.ptau artifacts/v2/reward_check_0000.zkey
-npx snarkjs zkey contribute artifacts/v2/reward_check_0000.zkey artifacts/v2/reward_check_final.zkey --name="v2 dev zkey" -e="zk-peer-incentive-v2-zkey"
-npx snarkjs zkey verify artifacts/v2/reward_check.r1cs artifacts/v2/pot15_final.ptau artifacts/v2/reward_check_final.zkey
-npx snarkjs zkey export verificationkey artifacts/v2/reward_check_final.zkey artifacts/v2/verification_key.json
-npx snarkjs groth16 prove artifacts/v2/reward_check_final.zkey artifacts/v2/witness.wtns artifacts/v2/proof.json artifacts/v2/public.json
-npx snarkjs groth16 verify artifacts/v2/verification_key.json artifacts/v2/public.json artifacts/v2/proof.json
-npx snarkjs zkey export solidityverifier artifacts/v2/reward_check_final.zkey contracts/RewardGroth16Verifier.sol
-node scripts/export_solidity_fixture.js artifacts/v2/proof.json artifacts/v2/public.json vectors/v2/reward_lottery_state.json test/RewardProofFixture.sol vectors/v2/reward_proof_fixture.json
+contracts/
+  Solidity verifier adapter, reward pool, and final-state registry.
 
-forge build
-forge test -vvv
+scripts/build_sidecar_reward_artifacts.js
+  Builds reward proof artifacts from MACI-derived sidecar inputs.
+
+scripts/run_full_maci_reward_e2e.js
+  Runs official MACI plus reward integration on Hardhat or Anvil.
+
+maci_baseline.md
+  Exact official MACI setup, pinned versions, commands, and Anvil details.
+
+zk_relation.md
+  More formal description of the reward ZK relation.
 ```
 
-Observed v2 circuit size:
+## What This Proves
 
-- 19,867 non-linear constraints;
-- 22 public inputs;
-- 80 private inputs.
+A successful run supports this limited claim:
 
-v2 tests:
+> A MACI final voting state can be used as the source for hidden binary reports;
+> a reward sidecar can bind those reports to a public root; and a Groth16 proof
+> can verify peer-prediction lottery payouts from that hidden state before a
+> Solidity contract finalizes claimable rewards.
 
-- `npm run test:v2:circuit` rejects tampered private report, private nonce,
-  nonce commitment, MACI state index, public stake, final root, and payout at
-  witness-generation time.
-- `forge test -vvv` verifies the real proof on-chain and rejects tampered
-  public final root, tampered public payout signal, and tampered proof bytes.
+This is a reward-layer extension around MACI. It is not a replacement for MACI
+and not a claim that MACI's core protocol was improved.
 
-v2 limitations:
+## Limitations
 
-- This is a reward sidecar root, not a replacement for the official MACI tally
-  proof.
-- The circuit verifies all 8 fixed-position leaves rather than a dynamic voter set.
-- Voter IDs remain private witness values in this PoC.
-- Stakes remain public but are included in every reward sidecar leaf.
-- The local Groth16 ceremony remains development-only.
-
-### M3. Integrated Finalize And Claim Flow
-
-v3 adds an integrated Anvil flow with:
-
-- `FinalStateRegistry`: a minimal final-state registry storing `disputeId`,
-  `finalStateRoot`, a placeholder `tallyResult`, a `maciTallyVerified` flag, and
-  a finalized flag;
-- `IntegratedRewardPool`: a proof-gated reward pool that requires:
-  - a funded dispute;
-  - a registry-finalized `disputeId`;
-  - a registry entry marked with verified MACI tally status;
-  - proof public signal `disputeId` matching the finalized dispute;
-  - proof public signal `finalStateRoot` matching the registry;
-  - public payout signals matching submitted claim amounts;
-  - a valid generated Groth16 proof;
-- recipient claims after reward finalization;
-- a local Anvil script that deploys, finalizes, claims, and prints addresses,
-  tx hashes, gas, and balances.
-
-#### v3 Commands
-
-From `poc/`:
-
-```bash
-forge build
-forge test -vvv
-npm run e2e:anvil
-```
-
-The E2E script reads:
-
-- `vectors/v2/reward_proof_fixture.json`
-- Foundry artifacts in `out/`
-
-It starts local Anvil automatically if `RPC_URL` is unset and
-`http://127.0.0.1:8545` is not already reachable. To use an existing node:
-
-```bash
-RPC_URL=http://127.0.0.1:8545 npm run e2e:anvil
-```
-
-v3 test coverage:
-
-- deploy registry/verifier/adapter/integrated pool;
-- register final state;
-- submit valid proof and finalize payouts;
-- claim a payout;
-- wrong root fails;
-- wrong dispute ID fails;
-- unverified MACI tally status fails;
-- tampered proof fails;
-- tampered public signals fail;
-- double finalization fails.
-
-v3 limitations:
-
-- The registry is a sidecar adapter and status gate; official MACI tally
-  generation and verification are exercised in the separate M0 baseline.
-- The tally result is a placeholder integer.
-- Recipient identity is not proven by the reward circuit.
-- The proof binds rewards to final-state leaves, but does not prove how the
-  final state was produced.
-- ETH payouts are used for PoC simplicity.
-- The Groth16 verifier and proof are generated from a local development setup.
-
-Not included in the reward E2E in this repo:
-
-- vendored or modified MACI contracts/circuits;
-- proof that a voter actually exerted effort;
-- coordinator privacy;
-- Sybil defense;
-- production receipt-freeness.
-
-### M4. Full MACI Plus Reward Sidecar E2E
-
-The full integration script runs inside the official MACI test harness and then
-deploys this repo's reward contracts to the same local chain. It supports both
-the official in-process Hardhat chain and an external Anvil JSON-RPC chain.
-
-It performs:
-
-- deploy official MACI contracts;
-- sign up 8 voters;
-- join all 8 voters to a poll;
-- publish 8 encrypted binary votes;
-- generate and submit real MACI message-processing and tally proofs;
-- verify the MACI tally on-chain;
-- reconstruct final MACI poll state and derive binary reports from final
-  ballots;
-- build `finalRewardStateRoot`;
-- generate and locally verify the reward Groth16 proof;
-- deploy `RewardGroth16Verifier`, `RewardVerifierAdapter`,
-  `FinalStateRegistry`, and `IntegratedRewardPool`;
-- register the reward sidecar root with verified MACI tally status;
-- finalize payouts and claim one winning reward.
-
-Command:
-
-```bash
-MACI_REPO=/tmp/maci-official npm run e2e:full-maci-reward
-MACI_REPO=/tmp/maci-official npm run e2e:full-maci-reward:anvil
-```
-
-Prerequisites:
-
-- official MACI repo prepared as described in `maci_baseline.md`;
-- reward v2 circuit artifacts under `artifacts/v2/`;
-- `forge build` already run so reward contract artifacts exist under `out/`;
-- Foundry `anvil` and `cast` available in `PATH` for the Anvil command.
-
-Observed Hardhat-harness run:
-
-- MACI tally: option 0 = `36`, option 1 = `36`;
-- MACI total spent voice credits: `648`;
-- derived reports: `[1, 0, 1, 1, 0, 0, 1, 0]`;
-- `finalRewardStateRoot`:
-  `12893428548190776266549336236808584256712764293578728169607695948123515639549`;
-- reward winner index: `2`;
-- MACI proof phase: `113965 ms`;
-- reward proof phase: `2849 ms`;
-- reward finalize gas: `464247`;
-- claim gas: `30662`.
-
-Observed Anvil run:
-
-- execution chain ID: `31337`;
-- Anvil RPC: `http://127.0.0.1:8556`;
-- MACI tally: option 0 = `36`, option 1 = `36`;
-- MACI total spent voice credits: `648`;
-- derived reports: `[1, 0, 1, 1, 0, 0, 1, 0]`;
-- `finalRewardStateRoot`:
-  `5467628283882597849812545621007549485893283266378756219242748369852677028795`;
-- reward winner index: `4`;
-- MACI proof phase: `120523 ms`;
-- reward proof phase: `4560 ms`;
-- reward finalize gas: `464223`;
-- claim gas: `30662`.
-
-Generated full-integration reward artifacts are written under:
-
-- `artifacts/full_maci_reward/sidecar_input.json`
-- `artifacts/full_maci_reward/reward/reward_sidecar_vector.json`
-- `artifacts/full_maci_reward/reward/input.json`
-- `artifacts/full_maci_reward/reward/proof.json`
-- `artifacts/full_maci_reward/reward/public.json`
-- `artifacts/full_maci_reward/reward/reward_proof_fixture.json`
-- `artifacts/full_maci_reward/reward/summary.json`
-
-The Anvil full-integration command writes its reproducible reward artifacts
-under `artifacts/full_maci_reward_anvil/`.
-
-Anvil execution details:
-
-- the script starts Anvil on port `8556` with MACI's testing mnemonic;
-- it temporarily patches the official MACI testing package's Hardhat config to
-  use `localhost`;
-- it restores that config after the run;
-- no official MACI contracts or circuits are vendored or modified in this repo.
-
-### Reference Model
-
-Files:
-
-- `reference/reward_model.js`
-- `reference/test_reward_model.js`
-
-Run:
-
-```bash
-node reference/test_reward_model.js
-```
-
-This checks:
-
-- reward recomputation and tamper detection;
-- matched-weighting neutrality;
-- mismatched-weighting payout bias;
-- self-calibration under account-level leave-one-out.
-
-### ZK Relation and Circuit
-
-Files:
-
-- `zk_relation.md`
-- `circuits/reward_check.circom`
-
-The v2 circuit verifies lottery payouts from private reports and nonces and
-binds those private values to a public MACI reward sidecar root.
-
-### Solidity Contracts
-
-Files:
-
-- `contracts/IRewardVerifier.sol`
-- `contracts/MockRewardVerifier.sol`
-- `contracts/RewardPool.sol`
-- `contracts/RewardGroth16Verifier.sol`
-- `contracts/RewardVerifierAdapter.sol`
-- `contracts/FinalStateRegistry.sol`
-- `contracts/IntegratedRewardPool.sol`
-
-The integrated payout contract accepts proof-gated payout vectors only after a
-matching reward sidecar root is registered with verified MACI tally status. The
-generated Groth16 verifier is used through the adapter; the mock verifier is
-retained only for separate sanity tests.
-
-### Benchmarks
-
-Run:
-
-```bash
-node scripts/benchmark_reference.js
-```
-
-This gives a reference computation benchmark. ZK proving time and verifier gas
-require Circom/snarkjs/Foundry installation.
-
-## Research Interpretation
-
-The v3 PoC supports the limited claim:
-
-> Lottery peer-prediction payouts can be represented as a ZK-verifiable relation
-> over hidden reports/nonces, bound to a MACI reward sidecar root, and used in an
-> integrated local finalize-and-claim reward flow with a real Solidity Groth16
-> verifier. A pinned official MACI baseline and integration script demonstrate
-> the unmodified MACI signup, encrypted voting, processing, tally proof, tally
-> verification, reward sidecar proof, reward finalization, and reward claim flow
-> on local Hardhat and Anvil chains.
-
-It does not prove effort exertion. Effort remains a game-theoretic incentive
-claim from the model.
+- Not production audited.
+- Uses a fixed `N = 8`.
+- Uses binary reports only.
+- Uses a local development Groth16 setup.
+- Reward sidecar nonce commitments are experimental.
+- Recipient identity is not proven inside the reward circuit.
+- Sybil resistance depends on external registration or staking policy.
+- The reward proof verifies payout correctness, not actual human effort.
+- Coordinator privacy and MACI security assumptions remain MACI's responsibility.
+- Official MACI contracts/circuits are not modified or vendored here.
