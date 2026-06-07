@@ -150,6 +150,128 @@ function computeRewards({
   return { normalizers, rewards };
 }
 
+function computeRewardDivisionWitness({
+  reports,
+  stakes,
+  peerIndices,
+  smoothing = 1n,
+  kappa = 1n,
+  scale = 1_000_000n,
+}) {
+  assertInputs({ reports, stakes, peerIndices, smoothing, kappa });
+  const bw = stakes.map((w, i) => toBigInt(w, `stakes[${i}]`));
+  const bk = toBigInt(kappa, "kappa");
+  const bs = toBigInt(scale, "scale");
+  const normalizers = computeLeaveOneOutNormalizers({ reports, stakes: bw, smoothing });
+
+  return reports.map((r, i) => {
+    const peer = peerIndices[i];
+    const agreement = reports[i] === reports[peer] ? 1n : 0n;
+    const denominator =
+      r === 1
+        ? normalizers[i].oneNumerator
+        : normalizers[i].denominator - normalizers[i].oneNumerator;
+    if (denominator <= 0n) throw new Error(`zero report normalizer at index ${i}`);
+
+    const numerator = bk * bw[i] * agreement * normalizers[i].denominator * bs;
+    return {
+      agreement,
+      denominator,
+      numerator,
+      scaled: numerator / denominator,
+      remainder: numerator % denominator,
+      normalizer: r === 1 ? normalizers[i].one : normalizers[i].zero,
+    };
+  });
+}
+
+async function poseidonHash(inputs) {
+  const { buildPoseidon } = require("circomlibjs");
+  const poseidon = await buildPoseidon();
+  const prepared = inputs.map((value, i) => toBigInt(value, `poseidon input ${i}`));
+  return poseidon.F.toObject(poseidon(prepared));
+}
+
+function lowBits(value, bits) {
+  const b = BigInt(bits);
+  if (b <= 0n) throw new Error("bits must be positive");
+  return toBigInt(value) & ((1n << b) - 1n);
+}
+
+async function computeLotteryPayouts({
+  reports,
+  stakes,
+  peerIndices,
+  nonces,
+  disputeId,
+  stateRoot,
+  smoothing = 1n,
+  kappa = 1n,
+  scale = 1_000_000n,
+  rhoTau,
+  lotteryBits = 32,
+}) {
+  assertInputs({ reports, stakes, peerIndices, smoothing, kappa });
+  if (!Array.isArray(nonces) || nonces.length !== reports.length) {
+    throw new Error("nonces must have the same length as reports");
+  }
+  if (!Number.isInteger(lotteryBits) || lotteryBits <= 0 || lotteryBits > 64) {
+    throw new Error("lotteryBits must be an integer in [1, 64]");
+  }
+
+  const brhoTau = toBigInt(rhoTau, "rhoTau");
+  if (brhoTau <= 0n) throw new Error("rhoTau must be positive");
+
+  const rewardWitness = computeRewardDivisionWitness({
+    reports,
+    stakes,
+    peerIndices,
+    smoothing,
+    kappa,
+    scale,
+  });
+  const lotteryScale = 1n << BigInt(lotteryBits);
+  const seed = await poseidonHash([
+    ...nonces.map((nonce, i) => toBigInt(nonce, `nonces[${i}]`)),
+    toBigInt(disputeId, "disputeId"),
+    toBigInt(stateRoot, "stateRoot"),
+  ]);
+
+  const draws = [];
+  const drawHashes = [];
+  const wins = [];
+  const payouts = [];
+  for (let i = 0; i < reports.length; i += 1) {
+    if (rewardWitness[i].scaled > brhoTau) {
+      throw new Error(`rhoTau must cover expected reward at index ${i}`);
+    }
+    const drawHash = await poseidonHash([seed, BigInt(i)]);
+    const draw = lowBits(drawHash, lotteryBits);
+    const win = draw * brhoTau < rewardWitness[i].scaled * lotteryScale ? 1n : 0n;
+    drawHashes.push(drawHash);
+    draws.push(draw);
+    wins.push(win);
+    payouts.push(win === 1n ? brhoTau : 0n);
+  }
+
+  return {
+    seed,
+    lotteryBits,
+    lotteryScale,
+    rewardWitness,
+    drawHashes,
+    draws,
+    wins,
+    payouts,
+  };
+}
+
+async function verifyLotteryPayouts(inputs, expectedPayouts) {
+  const { payouts } = await computeLotteryPayouts(inputs);
+  if (expectedPayouts.length !== payouts.length) return false;
+  return payouts.every((payout, i) => payout === toBigInt(expectedPayouts[i], `expected[${i}]`));
+}
+
 function verifyScaledPayouts(inputs, expectedScaledPayouts) {
   const { rewards } = computeRewards(inputs);
   if (expectedScaledPayouts.length !== rewards.length) return false;
@@ -202,6 +324,8 @@ module.exports = {
   aggregateFrequency,
   cmp,
   computeLeaveOneOutNormalizers,
+  computeLotteryPayouts,
+  computeRewardDivisionWitness,
   computeRewards,
   div,
   floorScaled,
@@ -211,5 +335,6 @@ module.exports = {
   mul,
   splitLeaveOneOutFrequency,
   toBigInt,
+  verifyLotteryPayouts,
   verifyScaledPayouts,
 };

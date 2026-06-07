@@ -4,12 +4,14 @@ const assert = require("assert");
 const {
   aggregateFrequency,
   cmp,
+  computeLotteryPayouts,
   computeRewards,
   div,
   formatFraction,
   fraction,
   mismatchRatios,
   splitLeaveOneOutFrequency,
+  verifyLotteryPayouts,
   verifyScaledPayouts,
 } = require("./reward_model");
 
@@ -106,12 +108,39 @@ function testSelfCalibrationBySplitting() {
   assert(cmp(splitGap, bound) <= 0);
 }
 
-function run() {
+async function testLotteryPayoutsAndTamperDetection() {
+  const vector = require("../vectors/v1/reward_lottery.json");
+  const inputs = vector.inputs;
+  const computed = await computeLotteryPayouts(inputs);
+
+  assert.strictEqual(computed.seed.toString(), vector.seed);
+  assert.deepStrictEqual(
+    computed.rewardWitness.map((reward) => reward.scaled.toString()),
+    vector.expectedRewards,
+  );
+  assert.deepStrictEqual(
+    computed.rewardWitness.map((reward) => reward.remainder.toString()),
+    vector.rewardRemainders,
+  );
+  assert.deepStrictEqual(computed.draws.map((draw) => draw.toString()), vector.draws);
+  assert.deepStrictEqual(computed.payouts.map((payout) => payout.toString()), vector.payouts);
+  assert.strictEqual(await verifyLotteryPayouts(inputs, vector.payouts), true);
+
+  const tampered = vector.payouts.slice();
+  tampered[0] = (BigInt(tampered[0]) + 1n).toString();
+  assert.strictEqual(await verifyLotteryPayouts(inputs, tampered), false);
+}
+
+async function run() {
   testRewardComputationAndTamperDetection();
   testMatchedWeightingNeutrality();
   testMismatchBias();
   testSelfCalibrationBySplitting();
+  await testLotteryPayoutsAndTamperDetection();
   console.log("All reward model tests passed.");
 }
 
-run();
+run().catch((err) => {
+  console.error(err);
+  process.exit(1);
+});

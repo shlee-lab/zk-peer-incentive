@@ -1,0 +1,9 @@
+poc/node_modules/
+poc/artifacts/
+poc/cache/
+poc/out/
+poc/broadcast/
+poc/*.ptau
+poc/*.zkey
+poc/**/*.wtns
+

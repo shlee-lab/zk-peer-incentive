@@ -4,7 +4,13 @@
   "version": "0.1.0",
   "description": "Proof-of-concept artifacts for ZK-verifiable peer-prediction rewards.",
   "scripts": {
+    "generate:v1": "node scripts/generate_v1_vector.js",
     "test:reference": "node reference/test_reward_model.js",
     "bench:reference": "node scripts/benchmark_reference.js"
+  },
+  "devDependencies": {
+    "circomlib": "^2.0.5",
+    "circomlibjs": "^0.1.7",
+    "snarkjs": "^0.7.6"
   }
 }

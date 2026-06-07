@@ -7,6 +7,9 @@ These contracts are the minimal payout layer for the ZK reward PoC.
 - `IRewardVerifier.sol`: generic verifier interface.
 - `MockRewardVerifier.sol`: mock verifier for contract-flow tests.
 - `RewardPool.sol`: ETH payout pool gated by a verifier proof.
+- `RewardGroth16Verifier.sol`: generated snarkjs Groth16 verifier for v1.
+- `RewardVerifierAdapter.sol`: adapter from `bytes` proof and dynamic public
+  signals to the generated verifier's fixed-array interface.
 
 ## Flow
 
@@ -23,41 +26,25 @@ These contracts are the minimal payout layer for the ZK reward PoC.
 ## Connecting a Generated snarkjs Verifier
 
 `snarkjs` generates verifier contracts with a typed Groth16 interface rather
-than the generic `bytes` interface used here. Add a small adapter contract:
+than the generic `bytes` interface used by `RewardPool`.
+`RewardVerifierAdapter` decodes `abi.encode(a, b, c)` and copies the 22 public
+signals into the generated verifier's fixed-size array.
 
-```solidity
-contract RewardVerifierAdapter is IRewardVerifier {
-    Groth16Verifier public immutable verifier;
-
-    constructor(Groth16Verifier verifier_) {
-        verifier = verifier_;
-    }
-
-    function verifyProof(bytes calldata proof, uint256[] calldata publicSignals)
-        external
-        view
-        returns (bool)
-    {
-        // Decode proof into snarkjs verifier arguments, then call verifier.
-        // The exact decoding depends on the generated verifier signature.
-    }
-}
-```
-
-For a production contract, prefer a typed adapter over raw `bytes` decoding.
+For a production contract, prefer a typed adapter and a stable proof/public
+input ABI over raw `bytes` decoding.
 
 ## Local Foundry Sketch
 
-When Foundry is installed:
+Run:
 
 ```bash
-forge init --no-commit .
-forge test
+forge build
+forge test -vvv
 ```
 
-The current repository does not include Foundry dependencies. The contracts are
-kept import-free so they can be copied into a Foundry or Hardhat project without
-OpenZeppelin.
+The tests do not use external Foundry dependencies. They verify the real v1
+proof through the generated verifier and check rejection of tampered proof data
+or public payout signals.
 
 ## Limitations
 

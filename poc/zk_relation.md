@@ -1,7 +1,7 @@
 # ZK Reward Relation
 
-This PoC verifies reward-computation correctness for inverse-frequency
-peer-agreement rewards over hidden binary reports.
+This PoC verifies lottery reward-computation correctness for inverse-frequency
+peer-agreement rewards over hidden binary reports and private nonces.
 
 It does not implement full MACI. It assumes a MACI-like voting layer has already
 collected encrypted or committed reports. The reward proof only shows that the
@@ -16,15 +16,20 @@ rule.
 - `smoothing`: smoothing parameter `a`.
 - `kappa`: reward scale.
 - `scale`: integer scale used for fixed-point payouts.
-- `payoutScaled[i]`: public scaled payout for voter `i`.
+- `payout[i]`: public lottery payout for voter `i`.
+- `disputeId`: public dispute context.
+- `stateRoot`: public state-root context. In v1 this is not yet Merkle-bound to
+  the reports/nonces.
+- `rhoTau`: public jackpot payout.
 
-The v0 circuit keeps reports private but does not bind them to commitments. A
-production version should add a commitment/MACI consistency relation.
+The v1 circuit keeps reports/nonces private but does not bind them to final-state
+commitments. v2 should add a MACI-like final-state inclusion relation.
 
 ## Private Witness
 
 - `reports[i] in {0,1}`.
-- Optional quotient/remainder witnesses for fixed-point division.
+- `nonces[i]`.
+- Quotient/remainder witnesses for fixed-point division.
 
 ## Reward Rule
 
@@ -64,11 +69,33 @@ $$
 \end{cases}
 $$
 
-The public scaled payout is:
+The expected scaled reward is:
 
 $$
-\mathrm{payoutScaled}_i =
+\mathrm{expectedScaled}_i =
 \left\lfloor \tau_i\cdot \mathrm{scale}\right\rfloor.
+$$
+
+The lottery seed is:
+
+$$
+s = H(nonce_0,\ldots,nonce_{N-1}, disputeId, stateRoot).
+$$
+
+The voter draw is:
+
+$$
+u_i = low32(H(s, i)).
+$$
+
+The public payout is:
+
+$$
+\mathrm{payout}_i =
+\begin{cases}
+\rhoTau, & u_i\rhoTau < \mathrm{expectedScaled}_i2^{32},\\
+0, & \text{otherwise.}
+\end{cases}
 $$
 
 ## Circuit Checks
@@ -104,7 +131,7 @@ $$
    $$
    \kappa w_i\mathrm{eq}_iD_i\mathrm{scale}
    =
-   \mathrm{payoutScaled}_iB_i+\mathrm{rem}_i.
+   \mathrm{expectedScaled}_iB_i+\mathrm{rem}_i.
    $$
 
    with
@@ -113,16 +140,22 @@ $$
    0\le \mathrm{rem}_i < B_i.
    $$
 
-The remainder range check is the only nontrivial low-level component. The
-included Circom draft wires the arithmetic relation and leaves a bounded
-less-than gadget as the implementation detail to instantiate with `circomlib`
-or a local bit-decomposition gadget.
+6. Lottery payout:
+
+   $$
+   draw_i\rhoTau < \mathrm{expectedScaled}_i2^{32}
+   $$
+
+   iff the public payout equals `rhoTau`; otherwise it equals zero.
+
+The circuit uses `circomlib` Poseidon, bit decomposition, and less-than gadgets.
 
 ## Security Claim
 
-Given a sound and zero-knowledge proof system, a valid proof implies that the
-public payouts match the hidden reports under the announced reward rule. The
-proof does not itself reveal the reports.
+Given a sound and zero-knowledge proof system, a valid v1 proof implies that the
+public lottery payouts match the hidden reports and nonces under the announced
+reward rule and public context. The proof does not itself reveal the reports or
+nonces.
 
 The proof does not show that voters exerted effort. Effort is induced by the
 mechanism-design incentive analysis, not cryptographically proven.
