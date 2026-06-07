@@ -46,14 +46,14 @@ library RewardProofFixture {
 
     function recipients() internal pure returns (address[] memory values) {
         values = new address[](8);
-        values[0] = address(uint160(4096));
-        values[1] = address(uint160(4097));
-        values[2] = address(uint160(4098));
-        values[3] = address(uint160(4099));
-        values[4] = address(uint160(4100));
-        values[5] = address(uint160(4101));
-        values[6] = address(uint160(4102));
-        values[7] = address(uint160(4103));
+        values[0] = 0x70997970C51812dc3A010C7d01b50e0d17dc79C8;
+        values[1] = 0x0000000000000000000000000000000000001001;
+        values[2] = 0x0000000000000000000000000000000000001002;
+        values[3] = 0x0000000000000000000000000000000000001003;
+        values[4] = 0x0000000000000000000000000000000000001004;
+        values[5] = 0x0000000000000000000000000000000000001005;
+        values[6] = 0x0000000000000000000000000000000000001006;
+        values[7] = 0x0000000000000000000000000000000000001007;
     }
 
     function proof() internal pure returns (bytes memory) {

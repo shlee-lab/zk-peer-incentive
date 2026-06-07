@@ -6,6 +6,7 @@
   "scripts": {
     "generate:v1": "node scripts/generate_v1_vector.js",
     "generate:v2": "node scripts/generate_v2_vector.js",
+    "e2e:anvil": "node scripts/run_anvil_e2e.js",
     "test:v2:circuit": "node scripts/test_v2_tamper.js",
     "test:reference": "node reference/test_reward_model.js",
     "bench:reference": "node scripts/benchmark_reference.js"

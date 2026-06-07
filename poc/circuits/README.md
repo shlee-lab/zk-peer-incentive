@@ -66,4 +66,5 @@ The generated verifier is wired into `RewardPool` through
 
 ## Known Next Step
 
-v3 should add an integrated final-state registry/reward-pool flow on Anvil.
+v3 uses this v2 circuit unchanged and adds an integrated final-state
+registry/reward-pool flow on Anvil.

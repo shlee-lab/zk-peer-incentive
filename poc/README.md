@@ -181,6 +181,68 @@ v2 limitations:
 - Stakes remain public but are included in every final-state leaf.
 - The local Groth16 ceremony remains development-only.
 
+### M3. Integrated Finalize And Claim Flow
+
+v3 adds an integrated Anvil flow with:
+
+- `FinalStateRegistry`: a minimal MACI-like final-state registry storing
+  `disputeId`, `finalStateRoot`, a placeholder `tallyResult`, and a finalized
+  flag;
+- `IntegratedRewardPool`: a proof-gated reward pool that requires:
+  - a funded dispute;
+  - a registry-finalized `disputeId`;
+  - proof public signal `disputeId` matching the finalized dispute;
+  - proof public signal `finalStateRoot` matching the registry;
+  - public payout signals matching submitted claim amounts;
+  - a valid generated Groth16 proof;
+- recipient claims after reward finalization;
+- a local Anvil script that deploys, finalizes, claims, and prints addresses,
+  tx hashes, gas, and balances.
+
+#### v3 Commands
+
+From `poc/`:
+
+```bash
+forge build
+forge test -vvv
+npm run e2e:anvil
+```
+
+The E2E script reads:
+
+- `vectors/v2/reward_proof_fixture.json`
+- Foundry artifacts in `out/`
+
+It starts local Anvil automatically if `RPC_URL` is unset and
+`http://127.0.0.1:8545` is not already reachable. To use an existing node:
+
+```bash
+RPC_URL=http://127.0.0.1:8545 npm run e2e:anvil
+```
+
+v3 test coverage:
+
+- deploy registry/verifier/adapter/integrated pool;
+- register final state;
+- submit valid proof and finalize payouts;
+- claim a payout;
+- wrong root fails;
+- wrong dispute ID fails;
+- tampered proof fails;
+- tampered public signals fail;
+- double finalization fails.
+
+v3 limitations:
+
+- The registry is a MACI-like adapter, not MACI.
+- The tally result is a placeholder integer.
+- Recipient identity is not proven by the reward circuit.
+- The proof binds rewards to final-state leaves, but does not prove how the
+  final state was produced.
+- ETH payouts are used for PoC simplicity.
+- The Groth16 verifier and proof are generated from a local development setup.
+
 Not included in this PoC:
 
 - full MACI message processing;
@@ -228,10 +290,13 @@ Files:
 - `contracts/RewardPool.sol`
 - `contracts/RewardGroth16Verifier.sol`
 - `contracts/RewardVerifierAdapter.sol`
+- `contracts/FinalStateRegistry.sol`
+- `contracts/IntegratedRewardPool.sol`
 
-The payout contract accepts proof-gated payout vectors and lets recipients claim
-ETH rewards. v1 Foundry tests use the generated Groth16 verifier through the
-adapter; the mock verifier is retained only for separate sanity tests.
+The integrated payout contract accepts proof-gated payout vectors only after a
+matching MACI-like final state is registered. The generated Groth16 verifier is
+used through the adapter; the mock verifier is retained only for separate sanity
+tests.
 
 ### Benchmarks
 
@@ -246,11 +311,12 @@ require Circom/snarkjs/Foundry installation.
 
 ## Research Interpretation
 
-The v2 PoC supports the limited claim:
+The v3 PoC supports the limited claim:
 
 > Lottery peer-prediction payouts can be represented as a ZK-verifiable relation
-> over hidden reports/nonces, bound to a MACI-like final-state root, and used to
-> gate public payouts with a real Solidity Groth16 verifier.
+> over hidden reports/nonces, bound to a MACI-like final-state root, and used in
+> an integrated local finalize-and-claim reward flow with a real Solidity
+> Groth16 verifier.
 
 It does not prove effort exertion. Effort remains a game-theoretic incentive
 claim from the model. It does not implement full MACI.

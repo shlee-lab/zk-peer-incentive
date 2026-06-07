@@ -41,14 +41,30 @@ function uintFunction(name, values) {
   ].join("\n");
 }
 
+function recipientAddresses(count) {
+  const addresses = [
+    // Anvil's second deterministic account. It receives the nonzero v2 payout.
+    "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+    "0x0000000000000000000000000000000000001001",
+    "0x0000000000000000000000000000000000001002",
+    "0x0000000000000000000000000000000000001003",
+    "0x0000000000000000000000000000000000001004",
+    "0x0000000000000000000000000000000000001005",
+    "0x0000000000000000000000000000000000001006",
+    "0x0000000000000000000000000000000000001007",
+  ];
+  if (count > addresses.length) {
+    throw new Error(`only ${addresses.length} fixture recipient addresses are configured`);
+  }
+  return addresses.slice(0, count);
+}
+
 function addressFunction(count) {
+  const addresses = recipientAddresses(count);
   return [
     "    function recipients() internal pure returns (address[] memory values) {",
     `        values = new address[](${count});`,
-    ...Array.from(
-      { length: count },
-      (_, i) => `        values[${i}] = address(uint160(${0x1000 + i}));`,
-    ),
+    ...addresses.map((address, i) => `        values[${i}] = ${address};`),
     "    }",
   ].join("\n");
 }
@@ -57,7 +73,7 @@ function main() {
   const [proofFile, publicFile, vectorFile, outputFile] = process.argv.slice(2);
   if (!proofFile || !publicFile || !vectorFile || !outputFile) {
     throw new Error(
-      "usage: node scripts/export_solidity_fixture.js <proof.json> <public.json> <vector.json> <output.sol>",
+      "usage: node scripts/export_solidity_fixture.js <proof.json> <public.json> <vector.json> <output.sol> [output.fixture.json]",
     );
   }
 
@@ -65,6 +81,7 @@ function main() {
   const publicSignals = readJson(publicFile);
   const vector = readJson(vectorFile);
   const amounts = publicSignals.slice(0, vector.payouts.length);
+  const recipients = recipientAddresses(amounts.length);
   const totalPayout = amounts.reduce((acc, value) => acc + BigInt(value), 0n);
 
   const source = `// SPDX-License-Identifier: MIT
@@ -90,7 +107,23 @@ ${proofBytes(proof)}
   fs.mkdirSync(path.dirname(outputFile), { recursive: true });
   fs.writeFileSync(outputFile, source);
   console.log(`Wrote ${outputFile}`);
+
+  const jsonOutputFile = process.argv[6];
+  if (jsonOutputFile) {
+    const jsonFixture = {
+      proof,
+      publicSignals,
+      amounts,
+      recipients,
+      payoutCount: amounts.length,
+      totalPayout: totalPayout.toString(),
+      disputeId: publicSignals[19],
+      finalStateRoot: publicSignals[20],
+    };
+    fs.mkdirSync(path.dirname(jsonOutputFile), { recursive: true });
+    fs.writeFileSync(jsonOutputFile, `${JSON.stringify(jsonFixture, null, 2)}\n`);
+    console.log(`Wrote ${jsonOutputFile}`);
+  }
 }
 
 main();
-

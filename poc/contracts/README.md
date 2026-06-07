@@ -7,11 +7,15 @@ These contracts are the minimal payout layer for the ZK reward PoC.
 - `IRewardVerifier.sol`: generic verifier interface.
 - `MockRewardVerifier.sol`: mock verifier for contract-flow tests.
 - `RewardPool.sol`: ETH payout pool gated by a verifier proof.
-- `RewardGroth16Verifier.sol`: generated snarkjs Groth16 verifier for v1.
+- `RewardGroth16Verifier.sol`: generated snarkjs Groth16 verifier for the
+  current v2/v3 circuit.
 - `RewardVerifierAdapter.sol`: adapter from `bytes` proof and dynamic public
   signals to the generated verifier's fixed-array interface.
+- `FinalStateRegistry.sol`: minimal MACI-like final-state registry.
+- `IntegratedRewardPool.sol`: reward pool that binds proof public signals to
+  the registry's `disputeId` and `finalStateRoot`.
 
-## Flow
+## Basic RewardPool Flow
 
 1. Deploy a verifier.
 2. Deploy `RewardPool(verifier)`.
@@ -22,6 +26,20 @@ These contracts are the minimal payout layer for the ZK reward PoC.
    - the first `amounts.length` public signals equal the payout amounts;
    - the funded budget covers total payout.
 6. Recipients call `claim(disputeId)`.
+
+## Integrated v3 Flow
+
+1. Deploy generated `Groth16Verifier`.
+2. Deploy `RewardVerifierAdapter`.
+3. Deploy `FinalStateRegistry`.
+4. Deploy `IntegratedRewardPool(adapter, registry)`.
+5. Register `finalStateRoot` for the dispute in the registry.
+6. Fund the dispute in the reward pool.
+7. Call `finalizeRewards` with recipients, payouts, proof, and public signals.
+8. Recipients call `claim(disputeId)`.
+
+`IntegratedRewardPool` checks that public signal index 19 equals `disputeId`
+and public signal index 20 equals the registry's `finalStateRoot`.
 
 ## Connecting a Generated snarkjs Verifier
 
@@ -42,9 +60,16 @@ forge build
 forge test -vvv
 ```
 
-The tests do not use external Foundry dependencies. They verify the real v1
-proof through the generated verifier and check rejection of tampered proof data
-or public payout signals.
+The tests do not use external Foundry dependencies. They verify the real proof
+through the generated verifier and check rejection of tampered proof data or
+public payout signals. v3 tests also cover registry-bound finalization and
+claims.
+
+Run the local Anvil E2E flow:
+
+```bash
+npm run e2e:anvil
+```
 
 ## Limitations
 
