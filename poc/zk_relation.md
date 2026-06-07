@@ -22,13 +22,15 @@ rule.
   the reports/nonces.
 - `rhoTau`: public jackpot payout.
 
-The v1 circuit keeps reports/nonces private but does not bind them to final-state
-commitments. v2 should add a MACI-like final-state inclusion relation.
+The v2 circuit keeps reports/nonces private and binds them to a MACI-like
+final-state root with fixed-position Merkle openings.
 
 ## Private Witness
 
 - `reports[i] in {0,1}`.
 - `nonces[i]`.
+- `voterIds[i]`.
+- `merklePathElements[i][d]`.
 - Quotient/remainder witnesses for fixed-point division.
 
 ## Reward Rule
@@ -148,13 +150,23 @@ $$
 
    iff the public payout equals `rhoTau`; otherwise it equals zero.
 
+7. Final-state inclusion:
+
+   $$
+   leaf_i = H(voterId_i, r_i, nonce_i, stake_i)
+   $$
+
+   and the fixed-position Merkle path for index `i` must reconstruct the public
+   `finalStateRoot`.
+
 The circuit uses `circomlib` Poseidon, bit decomposition, and less-than gadgets.
 
 ## Security Claim
 
-Given a sound and zero-knowledge proof system, a valid v1 proof implies that the
+Given a sound and zero-knowledge proof system, a valid v2 proof implies that the
 public lottery payouts match the hidden reports and nonces under the announced
-reward rule and public context. The proof does not itself reveal the reports or
+reward rule and public context, and that those same reports/nonces are included
+in the public final-state root. The proof does not itself reveal the reports or
 nonces.
 
 The proof does not show that voters exerted effort. Effort is induced by the

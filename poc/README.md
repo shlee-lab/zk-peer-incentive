@@ -96,6 +96,91 @@ v1 limitations:
 - The Groth16 ceremony is local development setup only.
 - The low-32-bit draw extraction is a simple PoC choice, not a production randomness design.
 
+### M2. MACI-Like Final State Adapter
+
+v2 binds the hidden reward inputs to a MACI-like final state root without
+implementing MACI message processing.
+
+Final state leaves are:
+
+```text
+leaf_i = Poseidon(voterId_i, report_i, nonce_i, stake_i)
+```
+
+The circuit verifies a fixed-position Merkle opening for each of the 8 leaves
+and requires every path to end at the public `finalStateRoot`. The same
+`finalStateRoot` is also used as lottery seed context, so the proof binds:
+
+```text
+hidden reports/nonces used for rewards == hidden reports/nonces committed in final state
+```
+
+The committed deterministic vector is:
+
+- `vectors/v2/reward_lottery_state.json`
+
+Generated local proving artifacts are written under:
+
+- `artifacts/v2/input.json`
+- `artifacts/v2/reward_check.r1cs`
+- `artifacts/v2/reward_check_js/reward_check.wasm`
+- `artifacts/v2/witness.wtns`
+- `artifacts/v2/proof.json`
+- `artifacts/v2/public.json`
+- `artifacts/v2/verification_key.json`
+- `artifacts/v2/reward_check_final.zkey`
+
+#### v2 Commands
+
+From `poc/`:
+
+```bash
+npm run generate:v2
+npm run test:reference
+
+mkdir -p artifacts/v2
+circom circuits/reward_check.circom --r1cs --wasm --sym -o artifacts/v2
+npx snarkjs wtns calculate artifacts/v2/reward_check_js/reward_check.wasm artifacts/v2/input.json artifacts/v2/witness.wtns
+npx snarkjs wtns check artifacts/v2/reward_check.r1cs artifacts/v2/witness.wtns
+npm run test:v2:circuit
+
+npx snarkjs powersoftau new bn128 15 artifacts/v2/pot15_0000.ptau
+npx snarkjs powersoftau contribute artifacts/v2/pot15_0000.ptau artifacts/v2/pot15_0001.ptau --name="v2 dev contribution" -e="zk-peer-incentive-v2-pot"
+npx snarkjs powersoftau prepare phase2 artifacts/v2/pot15_0001.ptau artifacts/v2/pot15_final.ptau
+npx snarkjs groth16 setup artifacts/v2/reward_check.r1cs artifacts/v2/pot15_final.ptau artifacts/v2/reward_check_0000.zkey
+npx snarkjs zkey contribute artifacts/v2/reward_check_0000.zkey artifacts/v2/reward_check_final.zkey --name="v2 dev zkey" -e="zk-peer-incentive-v2-zkey"
+npx snarkjs zkey verify artifacts/v2/reward_check.r1cs artifacts/v2/pot15_final.ptau artifacts/v2/reward_check_final.zkey
+npx snarkjs zkey export verificationkey artifacts/v2/reward_check_final.zkey artifacts/v2/verification_key.json
+npx snarkjs groth16 prove artifacts/v2/reward_check_final.zkey artifacts/v2/witness.wtns artifacts/v2/proof.json artifacts/v2/public.json
+npx snarkjs groth16 verify artifacts/v2/verification_key.json artifacts/v2/public.json artifacts/v2/proof.json
+npx snarkjs zkey export solidityverifier artifacts/v2/reward_check_final.zkey contracts/RewardGroth16Verifier.sol
+node scripts/export_solidity_fixture.js artifacts/v2/proof.json artifacts/v2/public.json vectors/v2/reward_lottery_state.json test/RewardProofFixture.sol
+
+forge build
+forge test -vvv
+```
+
+Observed v2 circuit size:
+
+- 17,779 non-linear constraints;
+- 22 public inputs;
+- 64 private inputs.
+
+v2 tests:
+
+- `npm run test:v2:circuit` rejects tampered private report, private nonce,
+  final root, and payout at witness-generation time.
+- `forge test -vvv` verifies the real proof on-chain and rejects tampered
+  public final root, tampered public payout signal, and tampered proof bytes.
+
+v2 limitations:
+
+- This is a MACI-like final-state adapter, not MACI.
+- The circuit verifies all 8 fixed-position leaves rather than a dynamic voter set.
+- Voter IDs remain private witness values in this PoC.
+- Stakes remain public but are included in every final-state leaf.
+- The local Groth16 ceremony remains development-only.
+
 Not included in this PoC:
 
 - full MACI message processing;
@@ -131,8 +216,8 @@ Files:
 - `zk_relation.md`
 - `circuits/reward_check.circom`
 
-The v1 circuit verifies lottery payouts from private reports and nonces. It does
-not yet bind reports to encrypted votes or final-state commitments.
+The v2 circuit verifies lottery payouts from private reports and nonces and
+binds those private values to a public MACI-like final-state root.
 
 ### Solidity Contracts
 
@@ -161,11 +246,11 @@ require Circom/snarkjs/Foundry installation.
 
 ## Research Interpretation
 
-The v1 PoC supports the limited claim:
+The v2 PoC supports the limited claim:
 
 > Lottery peer-prediction payouts can be represented as a ZK-verifiable relation
-> over hidden reports/nonces and used to gate public payouts with a real
-> Solidity Groth16 verifier.
+> over hidden reports/nonces, bound to a MACI-like final-state root, and used to
+> gate public payouts with a real Solidity Groth16 verifier.
 
 It does not prove effort exertion. Effort remains a game-theoretic incentive
 claim from the model. It does not implement full MACI.

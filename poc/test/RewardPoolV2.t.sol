@@ -6,12 +6,16 @@ import "../contracts/RewardPool.sol";
 import "../contracts/RewardVerifierAdapter.sol";
 import "./RewardProofFixture.sol";
 
-contract RewardPoolV1Test {
-    function testGeneratedVerifierAcceptsRealProof() public {
+contract RewardPoolV2Test {
+    uint256 internal constant FINAL_STATE_ROOT_SIGNAL_INDEX = 20;
+
+    function testGeneratedVerifierAcceptsRealProofBoundToFinalStateRoot() public {
         Groth16Verifier verifier = new Groth16Verifier();
         RewardVerifierAdapter adapter = new RewardVerifierAdapter(verifier);
+        uint256[] memory signals = RewardProofFixture.publicSignals();
 
-        require(adapter.verifyProof(RewardProofFixture.proof(), RewardProofFixture.publicSignals()), "proof rejected");
+        require(signals[FINAL_STATE_ROOT_SIGNAL_INDEX] != 0, "missing final root");
+        require(adapter.verifyProof(RewardProofFixture.proof(), signals), "proof rejected");
     }
 
     function testRewardPoolAcceptsRealProofAndPayouts() public {
@@ -30,6 +34,16 @@ contract RewardPoolV1Test {
 
         (bool finalized,) = pool.disputes(disputeId);
         require(finalized, "not finalized");
+    }
+
+    function testTamperedFinalStateRootRejected() public {
+        Groth16Verifier verifier = new Groth16Verifier();
+        RewardVerifierAdapter adapter = new RewardVerifierAdapter(verifier);
+
+        uint256[] memory signals = RewardProofFixture.publicSignals();
+        signals[FINAL_STATE_ROOT_SIGNAL_INDEX] = signals[FINAL_STATE_ROOT_SIGNAL_INDEX] + 1;
+
+        require(!adapter.verifyProof(RewardProofFixture.proof(), signals), "tampered root accepted");
     }
 
     function testTamperedPayoutSignalRejected() public {

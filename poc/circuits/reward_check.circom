@@ -3,7 +3,8 @@ pragma circom 2.1.6;
 include "../node_modules/circomlib/circuits/poseidon.circom";
 include "../node_modules/circomlib/circuits/bitify.circom";
 
-// Reward-check circuit for binary reports, ring peer matching, and lottery payouts.
+// Reward-check circuit for binary reports, ring peer matching, lottery payouts,
+// and MACI-like final-state root binding.
 //
 // Public signals are ordered with payouts first so RewardPool can compare
 // publicSignals[0..N-1] directly with submitted claim amounts.
@@ -15,12 +16,14 @@ include "../node_modules/circomlib/circuits/bitify.circom";
 // - kappa
 // - scale
 // - disputeId
-// - stateRoot
+// - finalStateRoot
 // - rhoTau
 //
 // Private witness:
 // - reports[i]
 // - nonces[i]
+// - voterIds[i]
+// - merklePathElements[i][d]
 // - expectedScaled[i]
 // - rewardRemainders[i]
 //
@@ -32,12 +35,18 @@ include "../node_modules/circomlib/circuits/bitify.circom";
 // N_i = sum_{j != i} stake_j * report_j + smoothing
 // B_i = report_i * N_i + (1-report_i) * (D_i-N_i)
 //
-// A private seed is Poseidon(nonces..., disputeId, stateRoot). For each voter,
+// Each final state leaf is Poseidon(voterId_i, report_i, nonce_i, stake_i).
+// The circuit verifies a fixed-position Merkle path for every voter and requires
+// each path to end at finalStateRoot.
+//
+// A private seed is Poseidon(nonces..., disputeId, finalStateRoot). For each voter,
 // draw_i is the low LOTTERY_BITS bits of Poseidon(seed, i), and the public
 // payout is rhoTau iff draw_i * rhoTau < expectedScaled_i * 2^LOTTERY_BITS.
-template RewardCheck(N, NBITS, LOTTERY_BITS) {
+template RewardCheck(N, DEPTH, NBITS, LOTTERY_BITS) {
     signal input reports[N];
     signal input nonces[N];
+    signal input voterIds[N];
+    signal input merklePathElements[N][DEPTH];
     signal input expectedScaled[N];
     signal input rewardRemainders[N];
 
@@ -47,7 +56,7 @@ template RewardCheck(N, NBITS, LOTTERY_BITS) {
     signal input kappa;
     signal input scale;
     signal input disputeId;
-    signal input stateRoot;
+    signal input finalStateRoot;
     signal input rhoTau;
 
     signal totalStake;
@@ -55,18 +64,42 @@ template RewardCheck(N, NBITS, LOTTERY_BITS) {
     signal weightedReport[N];
 
     component seedHash = Poseidon(N + 2);
+    component leafHash[N];
+    component merkleHash[N][DEPTH];
+    signal merkleNode[N][DEPTH + 1];
 
     var totalStakeExpr = 0;
     var totalOneStakeExpr = 0;
     for (var i = 0; i < N; i++) {
         reports[i] * (reports[i] - 1) === 0;
         seedHash.inputs[i] <== nonces[i];
+
+        leafHash[i] = Poseidon(4);
+        leafHash[i].inputs[0] <== voterIds[i];
+        leafHash[i].inputs[1] <== reports[i];
+        leafHash[i].inputs[2] <== nonces[i];
+        leafHash[i].inputs[3] <== stakes[i];
+        merkleNode[i][0] <== leafHash[i].out;
+
+        for (var d = 0; d < DEPTH; d++) {
+            merkleHash[i][d] = Poseidon(2);
+            if (((i >> d) & 1) == 0) {
+                merkleHash[i][d].inputs[0] <== merkleNode[i][d];
+                merkleHash[i][d].inputs[1] <== merklePathElements[i][d];
+            } else {
+                merkleHash[i][d].inputs[0] <== merklePathElements[i][d];
+                merkleHash[i][d].inputs[1] <== merkleNode[i][d];
+            }
+            merkleNode[i][d + 1] <== merkleHash[i][d].out;
+        }
+        merkleNode[i][DEPTH] === finalStateRoot;
+
         weightedReport[i] <== stakes[i] * reports[i];
         totalStakeExpr += stakes[i];
         totalOneStakeExpr += weightedReport[i];
     }
     seedHash.inputs[N] <== disputeId;
-    seedHash.inputs[N + 1] <== stateRoot;
+    seedHash.inputs[N + 1] <== finalStateRoot;
 
     totalStake <== totalStakeExpr;
     totalOneStake <== totalOneStakeExpr;
@@ -158,4 +191,4 @@ template RewardCheck(N, NBITS, LOTTERY_BITS) {
     }
 }
 
-component main { public [payouts, stakes, smoothing, kappa, scale, disputeId, stateRoot, rhoTau] } = RewardCheck(8, 128, 32);
+component main { public [payouts, stakes, smoothing, kappa, scale, disputeId, finalStateRoot, rhoTau] } = RewardCheck(8, 3, 128, 32);

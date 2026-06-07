@@ -187,7 +187,10 @@ function computeRewardDivisionWitness({
 
 async function poseidonHash(inputs) {
   const { buildPoseidon } = require("circomlibjs");
-  const poseidon = await buildPoseidon();
+  if (!poseidonPromise) {
+    poseidonPromise = buildPoseidon();
+  }
+  const poseidon = await poseidonPromise;
   const prepared = inputs.map((value, i) => toBigInt(value, `poseidon input ${i}`));
   return poseidon.F.toObject(poseidon(prepared));
 }
@@ -197,6 +200,8 @@ function lowBits(value, bits) {
   if (b <= 0n) throw new Error("bits must be positive");
   return toBigInt(value) & ((1n << b) - 1n);
 }
+
+let poseidonPromise;
 
 async function computeLotteryPayouts({
   reports,
@@ -272,6 +277,99 @@ async function verifyLotteryPayouts(inputs, expectedPayouts) {
   return payouts.every((payout, i) => payout === toBigInt(expectedPayouts[i], `expected[${i}]`));
 }
 
+async function hashFinalStateLeaf({ voterId, report, nonce, stake }) {
+  if (report !== 0 && report !== 1) throw new Error("report must be 0 or 1");
+  return poseidonHash([
+    toBigInt(voterId, "voterId"),
+    BigInt(report),
+    toBigInt(nonce, "nonce"),
+    toBigInt(stake, "stake"),
+  ]);
+}
+
+async function buildMerkleTree(leaves) {
+  if (!Array.isArray(leaves) || leaves.length === 0) {
+    throw new Error("leaves must be a non-empty array");
+  }
+  if ((leaves.length & (leaves.length - 1)) !== 0) {
+    throw new Error("leaf count must be a power of two");
+  }
+
+  const levels = [leaves.map((leaf, i) => toBigInt(leaf, `leaves[${i}]`))];
+  while (levels[levels.length - 1].length > 1) {
+    const prev = levels[levels.length - 1];
+    const next = [];
+    for (let i = 0; i < prev.length; i += 2) {
+      next.push(await poseidonHash([prev[i], prev[i + 1]]));
+    }
+    levels.push(next);
+  }
+  return { levels, root: levels[levels.length - 1][0] };
+}
+
+function getMerklePath(tree, index) {
+  if (!tree || !Array.isArray(tree.levels)) throw new Error("invalid tree");
+  if (!Number.isInteger(index) || index < 0 || index >= tree.levels[0].length) {
+    throw new Error("index out of range");
+  }
+
+  const pathElements = [];
+  const pathIndices = [];
+  let idx = index;
+  for (let level = 0; level < tree.levels.length - 1; level += 1) {
+    const siblingIndex = idx ^ 1;
+    pathElements.push(tree.levels[level][siblingIndex]);
+    pathIndices.push(idx & 1);
+    idx >>= 1;
+  }
+  return { pathElements, pathIndices };
+}
+
+async function verifyMerklePath({ leaf, root, pathElements, pathIndices }) {
+  if (pathElements.length !== pathIndices.length) {
+    throw new Error("path length mismatch");
+  }
+  let node = toBigInt(leaf, "leaf");
+  for (let i = 0; i < pathElements.length; i += 1) {
+    const sibling = toBigInt(pathElements[i], `pathElements[${i}]`);
+    if (pathIndices[i] === 0) {
+      node = await poseidonHash([node, sibling]);
+    } else if (pathIndices[i] === 1) {
+      node = await poseidonHash([sibling, node]);
+    } else {
+      throw new Error(`pathIndices[${i}] must be 0 or 1`);
+    }
+  }
+  return node === toBigInt(root, "root");
+}
+
+async function buildFinalState({ voterIds, reports, nonces, stakes }) {
+  if (!Array.isArray(voterIds) || voterIds.length !== reports.length) {
+    throw new Error("voterIds must have the same length as reports");
+  }
+  if (!Array.isArray(nonces) || nonces.length !== reports.length) {
+    throw new Error("nonces must have the same length as reports");
+  }
+  if (!Array.isArray(stakes) || stakes.length !== reports.length) {
+    throw new Error("stakes must have the same length as reports");
+  }
+
+  const leaves = [];
+  for (let i = 0; i < reports.length; i += 1) {
+    leaves.push(
+      await hashFinalStateLeaf({
+        voterId: voterIds[i],
+        report: reports[i],
+        nonce: nonces[i],
+        stake: stakes[i],
+      }),
+    );
+  }
+  const tree = await buildMerkleTree(leaves);
+  const paths = leaves.map((_, i) => getMerklePath(tree, i));
+  return { leaves, tree, paths, finalStateRoot: tree.root };
+}
+
 function verifyScaledPayouts(inputs, expectedScaledPayouts) {
   const { rewards } = computeRewards(inputs);
   if (expectedScaledPayouts.length !== rewards.length) return false;
@@ -322,6 +420,8 @@ function formatFraction(a) {
 module.exports = {
   add,
   aggregateFrequency,
+  buildFinalState,
+  buildMerkleTree,
   cmp,
   computeLeaveOneOutNormalizers,
   computeLotteryPayouts,
@@ -331,10 +431,14 @@ module.exports = {
   floorScaled,
   formatFraction,
   fraction,
+  getMerklePath,
+  hashFinalStateLeaf,
   mismatchRatios,
   mul,
+  poseidonHash,
   splitLeaveOneOutFrequency,
   toBigInt,
+  verifyMerklePath,
   verifyLotteryPayouts,
   verifyScaledPayouts,
 };

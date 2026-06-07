@@ -3,6 +3,7 @@
 const assert = require("assert");
 const {
   aggregateFrequency,
+  buildFinalState,
   cmp,
   computeLotteryPayouts,
   computeRewards,
@@ -11,6 +12,7 @@ const {
   fraction,
   mismatchRatios,
   splitLeaveOneOutFrequency,
+  verifyMerklePath,
   verifyLotteryPayouts,
   verifyScaledPayouts,
 } = require("./reward_model");
@@ -131,12 +133,51 @@ async function testLotteryPayoutsAndTamperDetection() {
   assert.strictEqual(await verifyLotteryPayouts(inputs, tampered), false);
 }
 
+async function testMerkleFinalStateVector() {
+  const vector = require("../vectors/v2/reward_lottery_state.json");
+  const inputs = vector.inputs;
+  const finalState = await buildFinalState(inputs);
+
+  assert.deepStrictEqual(finalState.leaves.map((leaf) => leaf.toString()), vector.leaves);
+  assert.strictEqual(finalState.finalStateRoot.toString(), vector.finalStateRoot);
+
+  for (let i = 0; i < finalState.leaves.length; i += 1) {
+    assert.deepStrictEqual(
+      finalState.paths[i].pathElements.map((element) => element.toString()),
+      vector.merklePaths[i].pathElements,
+    );
+    assert.deepStrictEqual(finalState.paths[i].pathIndices, vector.merklePaths[i].pathIndices);
+    assert.strictEqual(
+      await verifyMerklePath({
+        leaf: finalState.leaves[i],
+        root: finalState.finalStateRoot,
+        pathElements: finalState.paths[i].pathElements,
+        pathIndices: finalState.paths[i].pathIndices,
+      }),
+      true,
+    );
+  }
+
+  const tamperedPath = finalState.paths[0].pathElements.slice();
+  tamperedPath[0] += 1n;
+  assert.strictEqual(
+    await verifyMerklePath({
+      leaf: finalState.leaves[0],
+      root: finalState.finalStateRoot,
+      pathElements: tamperedPath,
+      pathIndices: finalState.paths[0].pathIndices,
+    }),
+    false,
+  );
+}
+
 async function run() {
   testRewardComputationAndTamperDetection();
   testMatchedWeightingNeutrality();
   testMismatchBias();
   testSelfCalibrationBySplitting();
   await testLotteryPayoutsAndTamperDetection();
+  await testMerkleFinalStateVector();
   console.log("All reward model tests passed.");
 }
 
