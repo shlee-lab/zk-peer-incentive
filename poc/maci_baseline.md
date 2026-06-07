@@ -124,13 +124,14 @@ the combined local flow can be run from `poc/`:
 
 ```sh
 MACI_REPO=/tmp/maci-official npm run e2e:full-maci-reward
+MACI_REPO=/tmp/maci-official npm run e2e:full-maci-reward:anvil
 ```
 
 The script writes a generated ts-mocha test into the official MACI checkout and
 runs it with Node `v20.20.2`. It uses official MACI contracts, SDK helpers,
 circuits, test zkeys, and rapidsnark to:
 
-- deploy MACI on the official Hardhat local network;
+- deploy MACI on the official local Hardhat network or an external Anvil RPC;
 - sign up 8 voters and join all 8 to a poll;
 - publish 8 encrypted binary votes;
 - generate and submit message-processing and tally Groth16 proofs;
@@ -140,7 +141,7 @@ circuits, test zkeys, and rapidsnark to:
 - deploy this repo's reward contracts to the same local chain;
 - finalize rewards and claim one payout.
 
-Observed run:
+Observed Hardhat-harness run:
 
 - Result: `1 passing (4m)`.
 - MACI tally: option 0 = `36`, option 1 = `36`.
@@ -154,18 +155,43 @@ Observed run:
 - Reward finalization gas: `464247`.
 - Reward claim gas: `30662`.
 
-Generated reward artifacts are under `poc/artifacts/full_maci_reward/` and are
+Observed Anvil run:
+
+- Result: `1 passing (5m)`.
+- Execution chain ID: `31337`.
+- Anvil RPC: `http://127.0.0.1:8556`.
+- MACI tally: option 0 = `36`, option 1 = `36`.
+- Total spent voice credits: `648`.
+- Derived reports: `[1, 0, 1, 1, 0, 0, 1, 0]`.
+- Final reward sidecar root:
+  `5467628283882597849812545621007549485893283266378756219242748369852677028795`.
+- Reward winner index: `4`.
+- MACI proof phase: `120523 ms`.
+- Reward proof phase: `4560 ms`.
+- Reward finalization gas: `464223`.
+- Reward claim gas: `30662`.
+
+Generated reward artifacts are under `poc/artifacts/full_maci_reward/` for the
+Hardhat harness and `poc/artifacts/full_maci_reward_anvil/` for Anvil. They are
 not committed.
 
-## Anvil Status
+## Anvil Details
 
-The reward contracts have a separate Anvil E2E script:
+The Anvil command starts a dedicated Anvil instance with MACI's testing mnemonic:
+
+```sh
+anvil --host 127.0.0.1 --port 8556 --chain-id 31337 \
+  --mnemonic "candy maple cake sugar pudding cream honey rich smooth crumble sweet treat" \
+  --accounts 101 --balance 10000 --gas-limit 30000000 --code-size-limit 1000000
+```
+
+The runner temporarily patches `/tmp/maci-official/packages/testing/hardhat.config.ts`
+so the official MACI testing package uses the `localhost` network pointed at
+that Anvil RPC, then restores the file after the run. This keeps the official
+MACI contracts and circuits unmodified while using Anvil as the execution chain.
+
+The older reward-only Anvil E2E remains available:
 
 ```sh
 npm run e2e:anvil
 ```
-
-The full official MACI plus reward script currently runs on the official MACI
-Hardhat test harness, not Anvil. The official SDK/test deployment path used here
-is Hardhat-centered; running the same full MACI flow on Anvil requires additional
-external-network wiring for the official MACI deployment/proof submission flow.

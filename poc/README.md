@@ -283,7 +283,6 @@ v3 limitations:
 Not included in the reward E2E in this repo:
 
 - vendored or modified MACI contracts/circuits;
-- Anvil deployment of the official MACI stack;
 - proof that a voter actually exerted effort;
 - coordinator privacy;
 - Sybil defense;
@@ -291,8 +290,9 @@ Not included in the reward E2E in this repo:
 
 ### M4. Full MACI Plus Reward Sidecar E2E
 
-The full integration script runs inside the official MACI Hardhat test harness
-and then deploys this repo's reward contracts to the same local Hardhat chain.
+The full integration script runs inside the official MACI test harness and then
+deploys this repo's reward contracts to the same local chain. It supports both
+the official in-process Hardhat chain and an external Anvil JSON-RPC chain.
 
 It performs:
 
@@ -315,15 +315,17 @@ Command:
 
 ```bash
 MACI_REPO=/tmp/maci-official npm run e2e:full-maci-reward
+MACI_REPO=/tmp/maci-official npm run e2e:full-maci-reward:anvil
 ```
 
 Prerequisites:
 
 - official MACI repo prepared as described in `maci_baseline.md`;
 - reward v2 circuit artifacts under `artifacts/v2/`;
-- `forge build` already run so reward contract artifacts exist under `out/`.
+- `forge build` already run so reward contract artifacts exist under `out/`;
+- Foundry `anvil` and `cast` available in `PATH` for the Anvil command.
 
-Observed local run:
+Observed Hardhat-harness run:
 
 - MACI tally: option 0 = `36`, option 1 = `36`;
 - MACI total spent voice credits: `648`;
@@ -336,6 +338,21 @@ Observed local run:
 - reward finalize gas: `464247`;
 - claim gas: `30662`.
 
+Observed Anvil run:
+
+- execution chain ID: `31337`;
+- Anvil RPC: `http://127.0.0.1:8556`;
+- MACI tally: option 0 = `36`, option 1 = `36`;
+- MACI total spent voice credits: `648`;
+- derived reports: `[1, 0, 1, 1, 0, 0, 1, 0]`;
+- `finalRewardStateRoot`:
+  `5467628283882597849812545621007549485893283266378756219242748369852677028795`;
+- reward winner index: `4`;
+- MACI proof phase: `120523 ms`;
+- reward proof phase: `4560 ms`;
+- reward finalize gas: `464223`;
+- claim gas: `30662`.
+
 Generated full-integration reward artifacts are written under:
 
 - `artifacts/full_maci_reward/sidecar_input.json`
@@ -346,14 +363,16 @@ Generated full-integration reward artifacts are written under:
 - `artifacts/full_maci_reward/reward/reward_proof_fixture.json`
 - `artifacts/full_maci_reward/reward/summary.json`
 
-Current Anvil status:
+The Anvil full-integration command writes its reproducible reward artifacts
+under `artifacts/full_maci_reward_anvil/`.
 
-- `npm run e2e:anvil` runs the reward registry/pool finalize-and-claim flow on
-  Anvil with a real reward proof.
-- `npm run e2e:full-maci-reward` runs full official MACI plus reward on the
-  official MACI Hardhat harness. The official MACI SDK/test deployment path used
-  here is Hardhat-centered; wiring the full MACI deployment to Anvil remains
-  future integration work.
+Anvil execution details:
+
+- the script starts Anvil on port `8556` with MACI's testing mnemonic;
+- it temporarily patches the official MACI testing package's Hardhat config to
+  use `localhost`;
+- it restores that config after the run;
+- no official MACI contracts or circuits are vendored or modified in this repo.
 
 ### Reference Model
 
@@ -423,8 +442,7 @@ The v3 PoC supports the limited claim:
 > verifier. A pinned official MACI baseline and integration script demonstrate
 > the unmodified MACI signup, encrypted voting, processing, tally proof, tally
 > verification, reward sidecar proof, reward finalization, and reward claim flow
-> on a local Hardhat chain.
+> on local Hardhat and Anvil chains.
 
 It does not prove effort exertion. Effort remains a game-theoretic incentive
-claim from the model. The full official MACI deployment has not yet been wired
-to Anvil; Anvil is currently covered by the reward-contract E2E flow.
+claim from the model.

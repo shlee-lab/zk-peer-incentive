@@ -2,16 +2,21 @@
 
 const fs = require("fs");
 const path = require("path");
-const { spawnSync } = require("child_process");
+const { spawn, spawnSync } = require("child_process");
 
 const projectRoot = path.resolve(__dirname, "../..");
 const pocRoot = path.join(projectRoot, "poc");
 const maciRepo = path.resolve(process.env.MACI_REPO || "/tmp/maci-official");
 const nodeVersion = process.env.MACI_NODE_VERSION || "20.20.2";
+const useAnvil = process.env.FULL_MACI_NETWORK === "anvil" || process.env.FULL_MACI_ANVIL === "1";
+const anvilPort = process.env.FULL_MACI_ANVIL_PORT || "8556";
+const anvilRpcUrl = process.env.FULL_MACI_ANVIL_RPC_URL || `http://127.0.0.1:${anvilPort}`;
+const anvilMnemonic = "candy maple cake sugar pudding cream honey rich smooth crumble sweet treat";
 const generatedTestPath = path.join(
   maciRepo,
   "packages/testing/ts/__tests__/zk_peer_reward_sidecar.generated.test.ts",
 );
+const testingHardhatConfigPath = path.join(maciRepo, "packages/testing/hardhat.config.ts");
 
 function shellQuote(value) {
   return `'${String(value).replace(/'/g, "'\\''")}'`;
@@ -21,6 +26,115 @@ function requirePath(target, message) {
   if (!fs.existsSync(target)) {
     throw new Error(`${message}: ${target}`);
   }
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function testingHardhatConfigSource() {
+  return `import "@nomicfoundation/hardhat-toolbox";
+
+import type { HardhatUserConfig } from "hardhat/types";
+
+const WALLET_MNEMONIC = ${JSON.stringify(anvilMnemonic)};
+const GAS_LIMIT = 30_000_000;
+
+const config: HardhatUserConfig = {
+  defaultNetwork: "localhost",
+  networks: {
+    localhost: {
+      url: ${JSON.stringify(anvilRpcUrl)},
+      gas: GAS_LIMIT,
+      blockGasLimit: GAS_LIMIT,
+      gasPrice: "auto",
+      accounts: { count: 101, mnemonic: WALLET_MNEMONIC },
+      loggingEnabled: false,
+    },
+    hardhat: {
+      gas: GAS_LIMIT,
+      blockGasLimit: GAS_LIMIT,
+      accounts: { count: 101, mnemonic: WALLET_MNEMONIC },
+      mining: {
+        auto: true,
+        interval: 100,
+      },
+    },
+  },
+  solidity: {
+    version: "0.8.28",
+    settings: {
+      optimizer: {
+        enabled: true,
+        runs: 200,
+        details: {
+          yul: true,
+        },
+      },
+    },
+  },
+  paths: {
+    sources: "./node_modules/@maci-protocol/sdk/node_modules/@maci-protocol/contracts/contracts",
+    artifacts: "./node_modules/@maci-protocol/sdk/node_modules/@maci-protocol/contracts/artifacts",
+  },
+};
+
+export default config;
+`;
+}
+
+async function waitForAnvilReady() {
+  for (let i = 0; i < 80; i += 1) {
+    const result = spawnSync("cast", ["block-number", "--rpc-url", anvilRpcUrl], {
+      encoding: "utf8",
+      stdio: "pipe",
+    });
+    if (result.status === 0) {
+      return;
+    }
+    await sleep(250);
+  }
+  throw new Error(`Anvil did not become ready at ${anvilRpcUrl}`);
+}
+
+async function startAnvil() {
+  console.log(`Starting Anvil for full MACI E2E at ${anvilRpcUrl}`);
+  const child = spawn(
+    "anvil",
+    [
+      "--host",
+      "127.0.0.1",
+      "--port",
+      anvilPort,
+      "--chain-id",
+      "31337",
+      "--mnemonic",
+      anvilMnemonic,
+      "--accounts",
+      "101",
+      "--balance",
+      "10000",
+      "--gas-limit",
+      "30000000",
+      "--code-size-limit",
+      "1000000",
+      "--silent",
+    ],
+    { stdio: ["ignore", "pipe", "pipe"] },
+  );
+
+  child.stderr.on("data", (data) => {
+    process.stderr.write(data);
+  });
+
+  try {
+    await waitForAnvilReady();
+  } catch (err) {
+    child.kill();
+    throw err;
+  }
+
+  return child;
 }
 
 function generatedTestSource() {
@@ -86,7 +200,7 @@ import path from "path";
 
 const PROJECT_ROOT = ${JSON.stringify(projectRoot)};
 const POC_ROOT = path.join(PROJECT_ROOT, "poc");
-const OUTPUT_ROOT = path.join(POC_ROOT, "artifacts/full_maci_reward");
+const OUTPUT_ROOT = process.env.FULL_MACI_REWARD_OUTPUT_ROOT || path.join(POC_ROOT, "artifacts/full_maci_reward");
 const REPORTS = [1, 0, 1, 1, 0, 0, 1, 0];
 const STAKES = ["10", "20", "10", "15", "5", "10", "15", "15"];
 
@@ -217,6 +331,9 @@ describe("full MACI plus reward sidecar E2E", function test() {
     const signers = await getSigners();
     const [signer, ...userSigners] = signers;
     const users = Array.from({ length: 8 }, () => new Keypair());
+    const network = await signer.provider!.getNetwork();
+    console.log(\`executionNetworkChainId=\${network.chainId.toString()}\`);
+    console.log(\`rewardOutputRoot=\${OUTPUT_ROOT}\`);
 
     const generateProofsArgs: Omit<IGenerateProofsArgs, "maciAddress" | "signer"> = {
       outputDir: testProofsDirPath,
@@ -400,7 +517,7 @@ describe("full MACI plus reward sidecar E2E", function test() {
 `;
 }
 
-function main() {
+async function main() {
   requirePath(maciRepo, "MACI_REPO does not exist");
   requirePath(path.join(maciRepo, "pnpm-lock.yaml"), "MACI_REPO is not an official MACI checkout");
   requirePath(path.join(pocRoot, "out/RewardGroth16Verifier.sol/Groth16Verifier.json"), "missing reward verifier artifact; run forge build");
@@ -409,25 +526,65 @@ function main() {
   fs.writeFileSync(generatedTestPath, generatedTestSource());
   console.log(`Wrote ${generatedTestPath}`);
 
+  let anvilChild = null;
+  let originalTestingHardhatConfig = null;
+  if (useAnvil) {
+    requirePath(testingHardhatConfigPath, "missing official MACI testing hardhat config");
+    originalTestingHardhatConfig = fs.readFileSync(testingHardhatConfigPath, "utf8");
+    fs.writeFileSync(testingHardhatConfigPath, testingHardhatConfigSource());
+    console.log(`Patched ${testingHardhatConfigPath} for Anvil localhost`);
+  }
+
   const command = [
     `if [ -s "$HOME/.nvm/nvm.sh" ]; then source "$HOME/.nvm/nvm.sh" && nvm use ${shellQuote(nodeVersion)}; fi`,
     "node -v",
     `pnpm --filter @maci-protocol/testing exec ts-mocha --exit ${shellQuote(generatedTestPath)}`,
   ].join(" && ");
 
-  const result = spawnSync("bash", ["-lc", command], {
-    cwd: maciRepo,
-    env: process.env,
-    stdio: "inherit",
-  });
+  try {
+    if (useAnvil) {
+      const anvilCheck = spawnSync("bash", ["-lc", "command -v anvil"], { encoding: "utf8" });
+      if (anvilCheck.status !== 0) {
+        throw new Error("anvil binary not found in PATH");
+      }
+      anvilChild = await startAnvil();
+    }
 
-  if (result.status !== 0) {
-    throw new Error("full MACI reward E2E failed");
+    const env = {
+      ...process.env,
+      FULL_MACI_REWARD_OUTPUT_ROOT: useAnvil
+        ? path.join(pocRoot, "artifacts/full_maci_reward_anvil")
+        : path.join(pocRoot, "artifacts/full_maci_reward"),
+    };
+    if (useAnvil) {
+      env.HARDHAT_NETWORK = "localhost";
+    }
+
+    const result = spawnSync("bash", ["-lc", command], {
+      cwd: maciRepo,
+      env,
+      stdio: "inherit",
+    });
+
+    if (result.status !== 0) {
+      throw new Error("full MACI reward E2E failed");
+    }
+  } finally {
+    if (anvilChild) {
+      anvilChild.kill();
+    }
+    if (originalTestingHardhatConfig !== null) {
+      fs.writeFileSync(testingHardhatConfigPath, originalTestingHardhatConfig);
+      console.log(`Restored ${testingHardhatConfigPath}`);
+    }
   }
 }
 
 try {
-  main();
+  Promise.resolve(main()).catch((err) => {
+    console.error(err);
+    process.exit(1);
+  });
 } catch (err) {
   console.error(err);
   process.exit(1);

@@ -8,6 +8,7 @@
     "generate:v2": "node scripts/generate_v2_vector.js",
     "e2e:anvil": "node scripts/run_anvil_e2e.js",
     "e2e:full-maci-reward": "node scripts/run_full_maci_reward_e2e.js",
+    "e2e:full-maci-reward:anvil": "FULL_MACI_NETWORK=anvil node scripts/run_full_maci_reward_e2e.js",
     "test:v2:circuit": "node scripts/test_v2_tamper.js",
     "test:reference": "node reference/test_reward_model.js",
     "bench:reference": "node scripts/benchmark_reference.js"
