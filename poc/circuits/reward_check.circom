@@ -4,7 +4,7 @@ include "../node_modules/circomlib/circuits/poseidon.circom";
 include "../node_modules/circomlib/circuits/bitify.circom";
 
 // Reward-check circuit for binary reports, ring peer matching, lottery payouts,
-// and MACI-like final-state root binding.
+// and MACI reward-sidecar state root binding.
 //
 // Public signals are ordered with payouts first so RewardPool can compare
 // publicSignals[0..N-1] directly with submitted claim amounts.
@@ -15,14 +15,16 @@ include "../node_modules/circomlib/circuits/bitify.circom";
 // - smoothing
 // - kappa
 // - scale
-// - disputeId
-// - finalStateRoot
+// - disputeId (used as pollId for the MACI sidecar integration)
+// - finalStateRoot (the reward sidecar root)
 // - rhoTau
 //
 // Private witness:
 // - reports[i]
 // - nonces[i]
+// - maciStateIndices[i]
 // - voterIds[i]
+// - nonceCommitments[i]
 // - merklePathElements[i][d]
 // - expectedScaled[i]
 // - rewardRemainders[i]
@@ -35,9 +37,12 @@ include "../node_modules/circomlib/circuits/bitify.circom";
 // N_i = sum_{j != i} stake_j * report_j + smoothing
 // B_i = report_i * N_i + (1-report_i) * (D_i-N_i)
 //
-// Each final state leaf is Poseidon(voterId_i, report_i, nonce_i, stake_i).
-// The circuit verifies a fixed-position Merkle path for every voter and requires
-// each path to end at finalStateRoot.
+// Each reward sidecar leaf is:
+// Poseidon(maciStateIndex_i, voterId_i, report_i, nonceCommitment_i, stake_i).
+// The circuit privately opens nonce_i and checks:
+// nonceCommitment_i = Poseidon(nonce_i, 0).
+// It then verifies a fixed-position Merkle path for every voter and requires each
+// path to end at finalStateRoot.
 //
 // A private seed is Poseidon(nonces..., disputeId, finalStateRoot). For each voter,
 // draw_i is the low LOTTERY_BITS bits of Poseidon(seed, i), and the public
@@ -45,7 +50,9 @@ include "../node_modules/circomlib/circuits/bitify.circom";
 template RewardCheck(N, DEPTH, NBITS, LOTTERY_BITS) {
     signal input reports[N];
     signal input nonces[N];
+    signal input maciStateIndices[N];
     signal input voterIds[N];
+    signal input nonceCommitments[N];
     signal input merklePathElements[N][DEPTH];
     signal input expectedScaled[N];
     signal input rewardRemainders[N];
@@ -65,6 +72,7 @@ template RewardCheck(N, DEPTH, NBITS, LOTTERY_BITS) {
 
     component seedHash = Poseidon(N + 2);
     component leafHash[N];
+    component nonceCommitmentHash[N];
     component merkleHash[N][DEPTH];
     signal merkleNode[N][DEPTH + 1];
 
@@ -74,11 +82,17 @@ template RewardCheck(N, DEPTH, NBITS, LOTTERY_BITS) {
         reports[i] * (reports[i] - 1) === 0;
         seedHash.inputs[i] <== nonces[i];
 
-        leafHash[i] = Poseidon(4);
-        leafHash[i].inputs[0] <== voterIds[i];
-        leafHash[i].inputs[1] <== reports[i];
-        leafHash[i].inputs[2] <== nonces[i];
-        leafHash[i].inputs[3] <== stakes[i];
+        nonceCommitmentHash[i] = Poseidon(2);
+        nonceCommitmentHash[i].inputs[0] <== nonces[i];
+        nonceCommitmentHash[i].inputs[1] <== 0;
+        nonceCommitmentHash[i].out === nonceCommitments[i];
+
+        leafHash[i] = Poseidon(5);
+        leafHash[i].inputs[0] <== maciStateIndices[i];
+        leafHash[i].inputs[1] <== voterIds[i];
+        leafHash[i].inputs[2] <== reports[i];
+        leafHash[i].inputs[3] <== nonceCommitments[i];
+        leafHash[i].inputs[4] <== stakes[i];
         merkleNode[i][0] <== leafHash[i].out;
 
         for (var d = 0; d < DEPTH; d++) {

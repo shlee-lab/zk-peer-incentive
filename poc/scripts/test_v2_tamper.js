@@ -48,6 +48,15 @@ function main() {
   expectWitnessFailure("tampered_nonce", (input) => {
     input.nonces[0] = (BigInt(input.nonces[0]) + 1n).toString();
   });
+  expectWitnessFailure("tampered_nonce_commitment", (input) => {
+    input.nonceCommitments[0] = (BigInt(input.nonceCommitments[0]) + 1n).toString();
+  });
+  expectWitnessFailure("tampered_maci_state_index", (input) => {
+    input.maciStateIndices[0] = (BigInt(input.maciStateIndices[0]) + 1n).toString();
+  });
+  expectWitnessFailure("tampered_stake", (input) => {
+    input.stakes[0] = (BigInt(input.stakes[0]) + 1n).toString();
+  });
   expectWitnessFailure("tampered_final_state_root", (input) => {
     input.finalStateRoot = (BigInt(input.finalStateRoot) + 1n).toString();
   });
@@ -57,4 +66,3 @@ function main() {
 }
 
 main();
-

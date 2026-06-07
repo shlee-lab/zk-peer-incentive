@@ -1,6 +1,6 @@
 # Reward Circuit
 
-`reward_check.circom` is the v2 lottery reward circuit for the relation in
+`reward_check.circom` is the lottery reward sidecar circuit for the relation in
 `../zk_relation.md`.
 
 It verifies lottery payouts for hidden binary reports and private nonces using:
@@ -9,18 +9,20 @@ It verifies lottery payouts for hidden binary reports and private nonces using:
 - inverse-frequency peer agreement;
 - ring peer matching, `peer(i) = i+1 mod N`;
 - integer floor payouts via quotient/remainder constraints.
-- Poseidon seed `H(nonces..., disputeId, stateRoot)`;
+- Poseidon seed `H(nonces..., disputeId, finalStateRoot)`;
 - per-voter draw `H(seed, i)` with low 32 bits used as the lottery draw.
-- Poseidon final-state leaves
-  `H(voterId_i, report_i, nonce_i, stake_i)`;
+- Poseidon nonce commitments `H(nonce_i, 0)`;
+- Poseidon reward sidecar leaves
+  `H(maciStateIndex_i, voterId_i, report_i, nonceCommitment_i, stake_i)`;
 - fixed-position Merkle openings for all 8 voters to `finalStateRoot`.
 
 ## Current Scope
 
-This is not a full MACI integration. v2 proves that the private reports and
-nonces used by the reward computation are included in a MACI-like final state
-root. It does not prove MACI message processing, coordinator behavior, or tally
-correctness.
+This is a reward sidecar relation for an unmodified MACI flow. It proves that
+the private reports and nonces used by the reward computation are bound to a
+MACI-derived reward state root. It does not prove MACI message processing,
+coordinator behavior, or tally correctness; those are exercised by the pinned
+official MACI baseline.
 
 ## Install Tools
 
@@ -64,7 +66,8 @@ npx snarkjs zkey export solidityverifier artifacts/v2/reward_check_final.zkey co
 The generated verifier is wired into `RewardPool` through
 `contracts/RewardVerifierAdapter.sol`.
 
-## Known Next Step
+## Current Integration
 
-v3 uses this v2 circuit unchanged and adds an integrated final-state
-registry/reward-pool flow on Anvil.
+The integrated registry/reward-pool flow on Anvil uses this circuit and requires
+a registry entry marked with verified MACI tally status before rewards can be
+finalized.

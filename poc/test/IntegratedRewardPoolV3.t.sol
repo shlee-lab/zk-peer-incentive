@@ -47,6 +47,15 @@ contract IntegratedRewardPoolV3Test {
         pool.fundDispute{value: RewardProofFixture.TOTAL_PAYOUT}(disputeId);
     }
 
+    function firstNonzeroAmountIndex(uint256[] memory amounts) internal pure returns (uint256) {
+        for (uint256 i = 0; i < amounts.length; i++) {
+            if (amounts[i] != 0) {
+                return i;
+            }
+        }
+        revert("no nonzero payout");
+    }
+
     function testFinalizeAndClaim() public {
         (
             FinalStateRegistry registry,
@@ -62,8 +71,9 @@ contract IntegratedRewardPoolV3Test {
 
         pool.finalizeRewards(disputeId, recipients, amounts, proof, publicSignals);
 
-        address claimant = recipients[0];
-        uint256 claimAmount = amounts[0];
+        uint256 winnerIndex = firstNonzeroAmountIndex(amounts);
+        address claimant = recipients[winnerIndex];
+        uint256 claimAmount = amounts[winnerIndex];
         require(pool.claimable(disputeId, claimant) == claimAmount, "claimable mismatch");
 
         uint256 beforeBalance = claimant.balance;
@@ -94,6 +104,29 @@ contract IntegratedRewardPoolV3Test {
             )
         );
         require(!ok, "wrong root accepted");
+    }
+
+    function testUnverifiedMaciTallyFails() public {
+        (
+            FinalStateRegistry registry,
+            IntegratedRewardPool pool,
+            uint256 disputeId,
+            uint256 finalStateRoot,
+            address[] memory recipients,
+            uint256[] memory amounts,
+            bytes memory proof,
+            uint256[] memory publicSignals
+        ) = deployStack();
+        registry.registerFinalStateWithMaciStatus(disputeId, finalStateRoot, 1, false);
+        pool.fundDispute{value: RewardProofFixture.TOTAL_PAYOUT}(disputeId);
+
+        (bool ok,) = address(pool).call(
+            abi.encodeCall(
+                IntegratedRewardPool.finalizeRewards,
+                (disputeId, recipients, amounts, proof, publicSignals)
+            )
+        );
+        require(!ok, "unverified maci tally accepted");
     }
 
     function testWrongDisputeIdFails() public {
@@ -191,4 +224,3 @@ contract IntegratedRewardPoolV3Test {
 
     receive() external payable {}
 }
-

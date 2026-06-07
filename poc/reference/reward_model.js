@@ -277,12 +277,17 @@ async function verifyLotteryPayouts(inputs, expectedPayouts) {
   return payouts.every((payout, i) => payout === toBigInt(expectedPayouts[i], `expected[${i}]`));
 }
 
-async function hashFinalStateLeaf({ voterId, report, nonce, stake }) {
+async function hashNonceCommitment(nonce) {
+  return poseidonHash([toBigInt(nonce, "nonce"), 0n]);
+}
+
+async function hashFinalStateLeaf({ maciStateIndex, voterId, report, nonceCommitment, stake }) {
   if (report !== 0 && report !== 1) throw new Error("report must be 0 or 1");
   return poseidonHash([
+    toBigInt(maciStateIndex, "maciStateIndex"),
     toBigInt(voterId, "voterId"),
     BigInt(report),
-    toBigInt(nonce, "nonce"),
+    toBigInt(nonceCommitment, "nonceCommitment"),
     toBigInt(stake, "stake"),
   ]);
 }
@@ -343,12 +348,24 @@ async function verifyMerklePath({ leaf, root, pathElements, pathIndices }) {
   return node === toBigInt(root, "root");
 }
 
-async function buildFinalState({ voterIds, reports, nonces, stakes }) {
+async function buildFinalState({ maciStateIndices, voterIds, reports, nonces, nonceCommitments, stakes }) {
+  if (!Array.isArray(maciStateIndices) || maciStateIndices.length !== reports.length) {
+    throw new Error("maciStateIndices must have the same length as reports");
+  }
   if (!Array.isArray(voterIds) || voterIds.length !== reports.length) {
     throw new Error("voterIds must have the same length as reports");
   }
-  if (!Array.isArray(nonces) || nonces.length !== reports.length) {
-    throw new Error("nonces must have the same length as reports");
+  if (!Array.isArray(nonceCommitments)) {
+    if (!Array.isArray(nonces) || nonces.length !== reports.length) {
+      throw new Error("nonces must have the same length as reports when nonceCommitments are omitted");
+    }
+    nonceCommitments = [];
+    for (let i = 0; i < nonces.length; i += 1) {
+      nonceCommitments.push(await hashNonceCommitment(nonces[i]));
+    }
+  }
+  if (nonceCommitments.length !== reports.length) {
+    throw new Error("nonceCommitments must have the same length as reports");
   }
   if (!Array.isArray(stakes) || stakes.length !== reports.length) {
     throw new Error("stakes must have the same length as reports");
@@ -358,16 +375,17 @@ async function buildFinalState({ voterIds, reports, nonces, stakes }) {
   for (let i = 0; i < reports.length; i += 1) {
     leaves.push(
       await hashFinalStateLeaf({
+        maciStateIndex: maciStateIndices[i],
         voterId: voterIds[i],
         report: reports[i],
-        nonce: nonces[i],
+        nonceCommitment: nonceCommitments[i],
         stake: stakes[i],
       }),
     );
   }
   const tree = await buildMerkleTree(leaves);
   const paths = leaves.map((_, i) => getMerklePath(tree, i));
-  return { leaves, tree, paths, finalStateRoot: tree.root };
+  return { leaves, nonceCommitments, tree, paths, finalStateRoot: tree.root };
 }
 
 function verifyScaledPayouts(inputs, expectedScaledPayouts) {
@@ -433,6 +451,7 @@ module.exports = {
   fraction,
   getMerklePath,
   hashFinalStateLeaf,
+  hashNonceCommitment,
   mismatchRatios,
   mul,
   poseidonHash,

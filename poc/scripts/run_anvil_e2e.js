@@ -88,6 +88,18 @@ function encodeProof(proof) {
   );
 }
 
+function firstWinningRecipient(fixture) {
+  const winnerIndex = fixture.amounts.findIndex((amount) => BigInt(amount) > 0n);
+  if (winnerIndex < 0) {
+    throw new Error("fixture has no nonzero payout to claim");
+  }
+  return {
+    index: winnerIndex,
+    address: fixture.recipients[winnerIndex],
+    amount: fixture.amounts[winnerIndex],
+  };
+}
+
 async function main() {
   const provider = new ethers.providers.JsonRpcProvider(RPC_URL);
   const anvil = await startAnvilIfNeeded(provider);
@@ -134,7 +146,8 @@ async function main() {
       ),
     );
 
-    const claimant = fixture.recipients[0];
+    const winner = firstWinningRecipient(fixture);
+    const claimant = winner.address;
     const claimable = await pool.claimable(disputeId, claimant);
     const before = await provider.getBalance(claimant);
     const claimSigner = provider.getSigner(claimant);
@@ -143,7 +156,9 @@ async function main() {
 
     console.log(`disputeId=${disputeId.toString()}`);
     console.log(`finalStateRoot=${finalStateRoot.toString()}`);
+    console.log(`winnerIndex=${winner.index}`);
     console.log(`claimant=${claimant}`);
+    console.log(`fixtureClaimAmount=${winner.amount}`);
     console.log(`claimableBefore=${claimable.toString()}`);
     console.log(`claimantBalanceBefore=${before.toString()}`);
     console.log(`claimantBalanceAfter=${after.toString()}`);

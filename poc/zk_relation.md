@@ -3,34 +3,37 @@
 This PoC verifies lottery reward-computation correctness for inverse-frequency
 peer-agreement rewards over hidden binary reports and private nonces.
 
-It does not implement full MACI. It assumes a MACI-like voting layer has already
-collected encrypted or committed reports. The reward proof only shows that the
-announced payouts are consistent with hidden reports and the announced reward
-rule.
+It does not rewrite MACI. The official MACI baseline is exercised separately,
+and this relation is the reward sidecar proof attached to a MACI-derived final
+poll state. The reward proof only shows that the announced payouts are
+consistent with hidden reports and the announced reward rule.
 
 ## Public Inputs
 
-- `n`: fixed voter count for the circuit instance.
+- `N = 8`: fixed voter count for this circuit instance.
 - `stakes[i]`: public stake for voter `i`.
-- `peer[i]`: public peer assignment for voter `i`.
+- `peer(i) = i+1 mod N`: fixed ring peer assignment.
 - `smoothing`: smoothing parameter `a`.
 - `kappa`: reward scale.
 - `scale`: integer scale used for fixed-point payouts.
 - `payout[i]`: public lottery payout for voter `i`.
-- `disputeId`: public dispute context.
-- `stateRoot`: public state-root context. In v1 this is not yet Merkle-bound to
-  the reports/nonces.
+- `disputeId`: public dispute or MACI poll context.
+- `finalStateRoot`: public reward sidecar root. In the MACI integration plan this
+  is `finalRewardStateRoot`.
 - `rhoTau`: public jackpot payout.
 
-The v2 circuit keeps reports/nonces private and binds them to a MACI-like
-final-state root with fixed-position Merkle openings.
+The current circuit keeps reports/nonces private and binds them to a MACI reward
+sidecar root with fixed-position Merkle openings.
 
 ## Private Witness
 
 - `reports[i] in {0,1}`.
 - `nonces[i]`.
+- `maciStateIndices[i]`.
 - `voterIds[i]`.
+- `nonceCommitments[i]`.
 - `merklePathElements[i][d]`.
+- `expectedScaled[i]`.
 - Quotient/remainder witnesses for fixed-point division.
 
 ## Reward Rule
@@ -81,7 +84,7 @@ $$
 The lottery seed is:
 
 $$
-s = H(nonce_0,\ldots,nonce_{N-1}, disputeId, stateRoot).
+s = H(nonce_0,\ldots,nonce_{N-1}, disputeId, finalStateRoot).
 $$
 
 The voter draw is:
@@ -150,10 +153,16 @@ $$
 
    iff the public payout equals `rhoTau`; otherwise it equals zero.
 
-7. Final-state inclusion:
+7. Reward sidecar nonce opening:
 
    $$
-   leaf_i = H(voterId_i, r_i, nonce_i, stake_i)
+   nonceCommitment_i = H(nonce_i, 0)
+   $$
+
+8. Reward sidecar final-state inclusion:
+
+   $$
+   leaf_i = H(maciStateIndex_i, voterId_i, r_i, nonceCommitment_i, stake_i)
    $$
 
    and the fixed-position Merkle path for index `i` must reconstruct the public
@@ -163,11 +172,11 @@ The circuit uses `circomlib` Poseidon, bit decomposition, and less-than gadgets.
 
 ## Security Claim
 
-Given a sound and zero-knowledge proof system, a valid v2 proof implies that the
+Given a sound and zero-knowledge proof system, a valid proof implies that the
 public lottery payouts match the hidden reports and nonces under the announced
-reward rule and public context, and that those same reports/nonces are included
-in the public final-state root. The proof does not itself reveal the reports or
-nonces.
+reward rule and public context, and that those same reports/nonces open to the
+nonce commitments and reports included in the public reward sidecar root. The
+proof does not itself reveal the reports or nonces.
 
 The proof does not show that voters exerted effort. Effort is induced by the
 mechanism-design incentive analysis, not cryptographically proven.

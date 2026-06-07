@@ -11,9 +11,10 @@ These contracts are the minimal payout layer for the ZK reward PoC.
   current v2/v3 circuit.
 - `RewardVerifierAdapter.sol`: adapter from `bytes` proof and dynamic public
   signals to the generated verifier's fixed-array interface.
-- `FinalStateRegistry.sol`: minimal MACI-like final-state registry.
+- `FinalStateRegistry.sol`: minimal reward sidecar registry with a MACI tally
+  status flag.
 - `IntegratedRewardPool.sol`: reward pool that binds proof public signals to
-  the registry's `disputeId` and `finalStateRoot`.
+  the registry's `disputeId` and reward sidecar `finalStateRoot`.
 
 ## Basic RewardPool Flow
 
@@ -33,13 +34,15 @@ These contracts are the minimal payout layer for the ZK reward PoC.
 2. Deploy `RewardVerifierAdapter`.
 3. Deploy `FinalStateRegistry`.
 4. Deploy `IntegratedRewardPool(adapter, registry)`.
-5. Register `finalStateRoot` for the dispute in the registry.
+5. Register `finalStateRoot` for the dispute in the registry with verified MACI
+   tally status.
 6. Fund the dispute in the reward pool.
 7. Call `finalizeRewards` with recipients, payouts, proof, and public signals.
 8. Recipients call `claim(disputeId)`.
 
 `IntegratedRewardPool` checks that public signal index 19 equals `disputeId`
-and public signal index 20 equals the registry's `finalStateRoot`.
+and public signal index 20 equals the registry's `finalStateRoot`. It also
+requires the registry entry's `maciTallyVerified` flag to be true.
 
 ## Connecting a Generated snarkjs Verifier
 
@@ -74,7 +77,7 @@ npm run e2e:anvil
 ## Limitations
 
 - This is an ETH payout sketch, not an ERC20 integration.
-- Recipient identity is not proven by the circuit in v0.
+- Recipient identity is not proven by the circuit.
 - The generated proof must bind `payoutScaled[i]` to public signals.
-- The report-to-encrypted-vote consistency relation is an upstream MACI-like
-  integration step.
+- The report-to-encrypted-vote consistency relation is handled by the
+  MACI-derived reward sidecar state, not by this payout contract.

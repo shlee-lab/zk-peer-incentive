@@ -30,6 +30,7 @@ function v2Inputs() {
     reports: [1, 1, 0, 1, 0, 0, 1, 0],
     stakes: [10n, 20n, 10n, 15n, 5n, 10n, 15n, 15n],
     peerIndices: [1, 2, 3, 4, 5, 6, 7, 0],
+    maciStateIndices: Array.from({ length: 8 }, (_, i) => BigInt(i + 1)),
     nonces: Array.from({ length: 8 }, (_, i) => fieldElement(`zk-peer-v2 nonce ${i}`)),
     voterIds: Array.from({ length: 8 }, (_, i) => fieldElement(`zk-peer-v2 voter ${i}`)),
     disputeId: 78n,
@@ -44,7 +45,8 @@ function v2Inputs() {
 async function main() {
   const inputs = v2Inputs();
   const finalState = await buildFinalState(inputs);
-  const lotteryInputs = { ...inputs, stateRoot: finalState.finalStateRoot };
+  const sidecarInputs = { ...inputs, nonceCommitments: finalState.nonceCommitments };
+  const lotteryInputs = { ...sidecarInputs, stateRoot: finalState.finalStateRoot };
   const lottery = await computeLotteryPayouts(lotteryInputs);
   const rewardWitness = computeRewardDivisionWitness(inputs);
   const payouts = lottery.payouts.map((payout) => payout.toString());
@@ -55,8 +57,9 @@ async function main() {
 
   const vector = {
     version: "v2",
-    description: "Deterministic lottery reward vector bound to a MACI-like final state root.",
+    description: "Deterministic lottery reward vector bound to a MACI reward sidecar state root.",
     inputs: lotteryInputs,
+    nonceCommitments: finalState.nonceCommitments.map((commitment) => commitment.toString()),
     leaves: finalState.leaves.map((leaf) => leaf.toString()),
     merklePaths: finalState.paths.map((pathData) => ({
       pathElements: pathData.pathElements.map((element) => element.toString()),
@@ -76,7 +79,9 @@ async function main() {
   const circuitInput = {
     reports: inputs.reports,
     nonces: inputs.nonces,
+    maciStateIndices: inputs.maciStateIndices,
     voterIds: inputs.voterIds,
+    nonceCommitments: finalState.nonceCommitments,
     merklePathElements: vector.merklePaths.map((pathData) => pathData.pathElements),
     expectedScaled: vector.expectedRewards,
     rewardRemainders: vector.rewardRemainders,
@@ -100,4 +105,3 @@ main().catch((err) => {
   console.error(err);
   process.exit(1);
 });
-

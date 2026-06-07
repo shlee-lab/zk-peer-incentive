@@ -5,8 +5,10 @@ import "./FinalStateRegistry.sol";
 import "./IRewardVerifier.sol";
 
 contract IntegratedRewardPool {
-    uint256 public constant DISPUTE_ID_SIGNAL_INDEX = 19;
-    uint256 public constant FINAL_STATE_ROOT_SIGNAL_INDEX = 20;
+    uint256 public constant POLL_ID_SIGNAL_INDEX = 19;
+    uint256 public constant FINAL_REWARD_STATE_ROOT_SIGNAL_INDEX = 20;
+    uint256 public constant DISPUTE_ID_SIGNAL_INDEX = POLL_ID_SIGNAL_INDEX;
+    uint256 public constant FINAL_STATE_ROOT_SIGNAL_INDEX = FINAL_REWARD_STATE_ROOT_SIGNAL_INDEX;
 
     struct Dispute {
         bool rewardsFinalized;
@@ -75,12 +77,12 @@ contract IntegratedRewardPool {
         require(!dispute.rewardsFinalized, "already finalized");
         require(dispute.remainingBudget > 0, "unfunded dispute");
         require(recipients.length == amounts.length, "length mismatch");
-        require(publicSignals.length > FINAL_STATE_ROOT_SIGNAL_INDEX, "missing public signals");
+        require(publicSignals.length > FINAL_REWARD_STATE_ROOT_SIGNAL_INDEX, "missing public signals");
         require(publicSignals.length >= amounts.length, "missing payout signals");
-        require(publicSignals[DISPUTE_ID_SIGNAL_INDEX] == disputeId, "dispute signal mismatch");
+        require(publicSignals[POLL_ID_SIGNAL_INDEX] == disputeId, "poll signal mismatch");
 
         uint256 finalStateRoot = _requireFinalStateRoot(disputeId);
-        require(publicSignals[FINAL_STATE_ROOT_SIGNAL_INDEX] == finalStateRoot, "root signal mismatch");
+        require(publicSignals[FINAL_REWARD_STATE_ROOT_SIGNAL_INDEX] == finalStateRoot, "root signal mismatch");
         require(verifier.verifyProof(proof, publicSignals), "invalid proof");
 
         uint256 totalPayout = _recordPayouts(disputeId, recipients, amounts, publicSignals);
@@ -94,8 +96,10 @@ contract IntegratedRewardPool {
 
     function _requireFinalStateRoot(uint256 disputeId) internal view returns (uint256 finalStateRoot) {
         bool finalStateFinalized;
-        (finalStateRoot,, finalStateFinalized) = registry.finalStates(disputeId);
+        bool maciTallyVerified;
+        (finalStateRoot,, maciTallyVerified, finalStateFinalized) = registry.finalStates(disputeId);
         require(finalStateFinalized, "final state missing");
+        require(maciTallyVerified, "maci tally unverified");
     }
 
     function _recordPayouts(

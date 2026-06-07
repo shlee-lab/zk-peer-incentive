@@ -5,6 +5,7 @@ contract FinalStateRegistry {
     struct FinalState {
         uint256 finalStateRoot;
         uint256 tallyResult;
+        bool maciTallyVerified;
         bool finalized;
     }
 
@@ -12,7 +13,12 @@ contract FinalStateRegistry {
     mapping(uint256 => FinalState) public finalStates;
 
     event OwnershipTransferred(address indexed previousOwner, address indexed newOwner);
-    event FinalStateRegistered(uint256 indexed disputeId, uint256 finalStateRoot, uint256 tallyResult);
+    event FinalStateRegistered(
+        uint256 indexed disputeId,
+        uint256 finalStateRoot,
+        uint256 tallyResult,
+        bool maciTallyVerified
+    );
 
     modifier onlyOwner() {
         require(msg.sender == owner, "not owner");
@@ -31,13 +37,27 @@ contract FinalStateRegistry {
     }
 
     function registerFinalState(uint256 disputeId, uint256 finalStateRoot, uint256 tallyResult) external onlyOwner {
+        registerFinalStateWithMaciStatus(disputeId, finalStateRoot, tallyResult, true);
+    }
+
+    function registerFinalStateWithMaciStatus(
+        uint256 disputeId,
+        uint256 finalStateRoot,
+        uint256 tallyResult,
+        bool maciTallyVerified
+    ) public onlyOwner {
         require(finalStateRoot != 0, "zero root");
         require(!finalStates[disputeId].finalized, "already finalized");
 
         finalStates[disputeId] =
-            FinalState({finalStateRoot: finalStateRoot, tallyResult: tallyResult, finalized: true});
+            FinalState({
+                finalStateRoot: finalStateRoot,
+                tallyResult: tallyResult,
+                maciTallyVerified: maciTallyVerified,
+                finalized: true
+            });
 
-        emit FinalStateRegistered(disputeId, finalStateRoot, tallyResult);
+        emit FinalStateRegistered(disputeId, finalStateRoot, tallyResult, maciTallyVerified);
     }
 
     function isFinalized(uint256 disputeId) external view returns (bool) {
@@ -48,4 +68,3 @@ contract FinalStateRegistry {
         return finalStates[disputeId].finalStateRoot;
     }
 }
-
