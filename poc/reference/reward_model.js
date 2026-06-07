@@ -1,0 +1,215 @@
+"use strict";
+
+function toBigInt(value, name = "value") {
+  if (typeof value === "bigint") return value;
+  if (typeof value === "number" && Number.isInteger(value)) return BigInt(value);
+  if (typeof value === "string" && /^-?\d+$/.test(value)) return BigInt(value);
+  throw new Error(`${name} must be an integer`);
+}
+
+function gcd(a, b) {
+  a = a < 0n ? -a : a;
+  b = b < 0n ? -b : b;
+  while (b !== 0n) {
+    const t = a % b;
+    a = b;
+    b = t;
+  }
+  return a;
+}
+
+function fraction(num, den = 1n) {
+  num = toBigInt(num, "num");
+  den = toBigInt(den, "den");
+  if (den === 0n) throw new Error("zero denominator");
+  if (den < 0n) {
+    num = -num;
+    den = -den;
+  }
+  const g = gcd(num, den);
+  return { num: num / g, den: den / g };
+}
+
+function add(a, b) {
+  return fraction(a.num * b.den + b.num * a.den, a.den * b.den);
+}
+
+function mul(a, b) {
+  return fraction(a.num * b.num, a.den * b.den);
+}
+
+function div(a, b) {
+  if (b.num === 0n) throw new Error("division by zero fraction");
+  return fraction(a.num * b.den, a.den * b.num);
+}
+
+function cmp(a, b) {
+  const left = a.num * b.den;
+  const right = b.num * a.den;
+  if (left < right) return -1;
+  if (left > right) return 1;
+  return 0;
+}
+
+function floorScaled(a, scale) {
+  scale = toBigInt(scale, "scale");
+  if (scale <= 0n) throw new Error("scale must be positive");
+  return (a.num * scale) / a.den;
+}
+
+function assertInputs({ reports, stakes, peerIndices, smoothing, kappa }) {
+  if (!Array.isArray(reports) || reports.length === 0) {
+    throw new Error("reports must be a non-empty array");
+  }
+  if (!Array.isArray(stakes) || stakes.length !== reports.length) {
+    throw new Error("stakes must have the same length as reports");
+  }
+  if (!Array.isArray(peerIndices) || peerIndices.length !== reports.length) {
+    throw new Error("peerIndices must have the same length as reports");
+  }
+
+  reports.forEach((r, i) => {
+    if (r !== 0 && r !== 1) throw new Error(`reports[${i}] must be 0 or 1`);
+  });
+  stakes.forEach((w, i) => {
+    const bw = toBigInt(w, `stakes[${i}]`);
+    if (bw <= 0n) throw new Error(`stakes[${i}] must be positive`);
+  });
+  peerIndices.forEach((j, i) => {
+    if (!Number.isInteger(j) || j < 0 || j >= reports.length) {
+      throw new Error(`peerIndices[${i}] out of range`);
+    }
+    if (j === i) throw new Error(`peerIndices[${i}] must be leave-one-out`);
+  });
+
+  if (toBigInt(smoothing, "smoothing") < 0n) {
+    throw new Error("smoothing must be non-negative");
+  }
+  if (toBigInt(kappa, "kappa") < 0n) throw new Error("kappa must be non-negative");
+}
+
+function computeLeaveOneOutNormalizers({ reports, stakes, smoothing = 1n }) {
+  const n = reports.length;
+  const bw = stakes.map((w, i) => toBigInt(w, `stakes[${i}]`));
+  const a = toBigInt(smoothing, "smoothing");
+
+  const totalStake = bw.reduce((acc, w) => acc + w, 0n);
+  const totalOneStake = bw.reduce((acc, w, i) => acc + w * BigInt(reports[i]), 0n);
+
+  return reports.map((_, i) => {
+    const denominator = totalStake - bw[i] + 2n * a;
+    const oneNumerator = totalOneStake - bw[i] * BigInt(reports[i]) + a;
+    if (denominator <= 0n) throw new Error(`normalizer denominator ${i} is zero`);
+    if (oneNumerator < 0n || oneNumerator > denominator) {
+      throw new Error(`invalid smoothed normalizer ${i}`);
+    }
+    return {
+      one: fraction(oneNumerator, denominator),
+      zero: fraction(denominator - oneNumerator, denominator),
+      oneNumerator,
+      denominator,
+    };
+  });
+}
+
+function computeRewards({
+  reports,
+  stakes,
+  peerIndices,
+  smoothing = 1n,
+  kappa = 1n,
+  scale = 1_000_000n,
+}) {
+  assertInputs({ reports, stakes, peerIndices, smoothing, kappa });
+  const bw = stakes.map((w, i) => toBigInt(w, `stakes[${i}]`));
+  const bk = toBigInt(kappa, "kappa");
+  const normalizers = computeLeaveOneOutNormalizers({ reports, stakes: bw, smoothing });
+
+  const rewards = reports.map((r, i) => {
+    const peer = peerIndices[i];
+    const agreement = reports[i] === reports[peer] ? 1n : 0n;
+    if (agreement === 0n || bk === 0n) {
+      return {
+        exact: fraction(0n),
+        scaled: 0n,
+        agreement,
+        normalizer: r === 1 ? normalizers[i].one : normalizers[i].zero,
+      };
+    }
+    const denom = r === 1 ? normalizers[i].oneNumerator : normalizers[i].denominator - normalizers[i].oneNumerator;
+    if (denom <= 0n) throw new Error(`zero report normalizer at index ${i}`);
+    const exact = fraction(bk * bw[i] * normalizers[i].denominator, denom);
+    return {
+      exact,
+      scaled: floorScaled(exact, scale),
+      agreement,
+      normalizer: r === 1 ? normalizers[i].one : normalizers[i].zero,
+    };
+  });
+
+  return { normalizers, rewards };
+}
+
+function verifyScaledPayouts(inputs, expectedScaledPayouts) {
+  const { rewards } = computeRewards(inputs);
+  if (expectedScaledPayouts.length !== rewards.length) return false;
+  return rewards.every((reward, i) => reward.scaled === toBigInt(expectedScaledPayouts[i], `expected[${i}]`));
+}
+
+function aggregateFrequency({ outsideOneStake, outsideStake, manipulatorReports, manipulatorStakes }) {
+  const R = toBigInt(outsideOneStake, "outsideOneStake");
+  const S = toBigInt(outsideStake, "outsideStake");
+  const W = manipulatorStakes.reduce((acc, w, i) => {
+    const bw = toBigInt(w, `manipulatorStakes[${i}]`);
+    if (bw < 0n) throw new Error("manipulator stake must be non-negative");
+    return acc + bw;
+  }, 0n);
+  const X = manipulatorStakes.reduce((acc, w, i) => {
+    const r = manipulatorReports[i];
+    if (r !== 0 && r !== 1) throw new Error("manipulator report must be binary");
+    return acc + toBigInt(w) * BigInt(r);
+  }, 0n);
+  return fraction(R + X, S + W);
+}
+
+function splitLeaveOneOutFrequency({ outsideOneStake, outsideStake, manipulatorReports, manipulatorStakes, accountIndex }) {
+  const R = toBigInt(outsideOneStake, "outsideOneStake");
+  const S = toBigInt(outsideStake, "outsideStake");
+  const W = manipulatorStakes.reduce((acc, w) => acc + toBigInt(w), 0n);
+  const X = manipulatorStakes.reduce((acc, w, i) => acc + toBigInt(w) * BigInt(manipulatorReports[i]), 0n);
+  const wa = toBigInt(manipulatorStakes[accountIndex], "manipulatorStake");
+  const ra = BigInt(manipulatorReports[accountIndex]);
+  return fraction(R + X - wa * ra, S + W - wa);
+}
+
+function mismatchRatios(q, omega, kappa = 1n) {
+  const reports = Object.keys(q);
+  const ratios = {};
+  for (const r of reports) {
+    if (!(r in omega)) throw new Error(`missing omega for report ${r}`);
+    ratios[r] = mul(fraction(kappa), div(fraction(q[r]), fraction(omega[r])));
+  }
+  return ratios;
+}
+
+function formatFraction(a) {
+  if (a.den === 1n) return a.num.toString();
+  return `${a.num}/${a.den}`;
+}
+
+module.exports = {
+  add,
+  aggregateFrequency,
+  cmp,
+  computeLeaveOneOutNormalizers,
+  computeRewards,
+  div,
+  floorScaled,
+  formatFraction,
+  fraction,
+  mismatchRatios,
+  mul,
+  splitLeaveOneOutFrequency,
+  toBigInt,
+  verifyScaledPayouts,
+};

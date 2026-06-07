@@ -1,0 +1,10 @@
+{
+  "name": "zk-peer-reward-poc",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Proof-of-concept artifacts for ZK-verifiable peer-prediction rewards.",
+  "scripts": {
+    "test:reference": "node reference/test_reward_model.js",
+    "bench:reference": "node scripts/benchmark_reference.js"
+  }
+}
