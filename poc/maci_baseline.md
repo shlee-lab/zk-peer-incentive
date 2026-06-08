@@ -81,9 +81,16 @@ relayed encrypted messages, generated two message-processing proof batches plus
 one vote-tally proof, submitted all proofs on-chain, submitted results, and
 verified the tally.
 
-## Path Decision
+## Integration Path
 
-Use Path A: unmodified MACI plus a reward sidecar adapter.
+Use unmodified official MACI plus a reward sidecar adapter, with MACI
+`VoteCommand.salt` values reused as the private reward nonces.
+
+This is Path A for MACI itself: contracts, circuits, zkeys, SDK helpers, and
+proof generation remain unmodified. It is also a limited Path-B-style nonce
+bridge: the reward nonce is not a new MACI command field, but it is sourced from
+an existing encrypted MACI command salt rather than from a separate external
+randomness input.
 
 Reasons:
 
@@ -96,22 +103,23 @@ Reasons:
   per-voter hidden ballot contents. That is expected for MACI and means reward
   binding should be a sidecar commitment built by the coordinator after MACI
   processing.
-- Path B would require changing MACI's vote command domain, circuits,
-  verifying keys, and proof generation flow to carry a reward nonce. That is a
-  deep MACI circuit rewrite and would destabilize the baseline.
+- A deeper Path B would add a dedicated reward nonce to MACI's vote command
+  domain and circuits. That would require changing MACI circuits, verifying
+  keys, and proof generation flow, so it is out of scope for this experimental
+  integration.
 
-## Reward Sidecar Binding Plan
+## Current Reward Sidecar Binding
 
-The sidecar will derive binary reports from final MACI ballots and build:
+The sidecar derives binary reports from final MACI ballots and builds:
 
 ```text
 leaf_i = H(maciStateIndex_i, voterId_i, report_i, nonceCommitment_i, stake_i, recipient_i)
 finalRewardStateRoot = MerkleRoot(leaf_1, ..., leaf_N)
 ```
 
-The reward circuit will privately open `nonce_i` to `nonceCommitment_i`, verify
-Merkle inclusion against `finalRewardStateRoot`, compute the peer-prediction
-lottery rewards, and expose payouts plus `pollId` and `finalRewardStateRoot` as
+The reward circuit privately opens `nonce_i` to `nonceCommitment_i`, verifies
+Merkle inclusion against `finalRewardStateRoot`, computes the peer-prediction
+lottery rewards, and exposes payouts plus `pollId` and `finalRewardStateRoot` as
 public signals. The current full MACI experiment uses each encrypted
 `VoteCommand.salt` as the private reward nonce, and the circuit also exposes
 recipient addresses so the payout contract can bind claims to the proof.
@@ -143,21 +151,16 @@ circuits, test zkeys, and rapidsnark to:
 - deploy this repo's reward contracts to the same local chain;
 - finalize rewards and claim one payout.
 
-Observed Hardhat-harness run:
+Observed Hardhat-harness smoke run:
 
 - Result: `1 passing (4m)`.
 - MACI tally: option 0 = `36`, option 1 = `36`.
 - Total spent voice credits: `648`.
 - Derived reports: `[1, 0, 1, 1, 0, 0, 1, 0]`.
-- Final reward sidecar root:
-  `12893428548190776266549336236808584256712764293578728169607695948123515639549`.
-- Reward winner index: `2`.
-- MACI proof phase: `113965 ms`.
-- Reward proof phase: `2849 ms`.
-- Reward finalization gas: `464247`.
-- Reward claim gas: `30662`.
+- This harness is useful for checking official MACI compatibility, but the
+  latest gas and reward timing numbers below come from the Anvil E2E run.
 
-Observed Anvil run:
+Latest observed Anvil run:
 
 - Result: `1 passing (5m)`.
 - Execution chain ID: `31337`.
@@ -166,12 +169,15 @@ Observed Anvil run:
 - Total spent voice credits: `648`.
 - Derived reports: `[1, 0, 1, 1, 0, 0, 1, 0]`.
 - Final reward sidecar root:
-  `5467628283882597849812545621007549485893283266378756219242748369852677028795`.
-- Reward winner index: `4`.
-- MACI proof phase: `120523 ms`.
-- Reward proof phase: `4560 ms`.
-- Reward finalization gas: `464223`.
-- Reward claim gas: `30662`.
+  `5918709685620845749538721862743514405600246650950154740349407238551684212180`.
+- Reward nonce source: `MACI VoteCommand.salt`.
+- Reward winner indices: `[2, 4]`.
+- MACI proof phase: `112450 ms`.
+- Reward proof phase: `919 ms`.
+- Reward root registration gas: `93334`.
+- Reward pool funding gas: `47396`.
+- Reward finalization gas: `545197`.
+- Reward claim gas: `30706`.
 
 Generated reward artifacts are under `poc/artifacts/full_maci_reward/` for the
 Hardhat harness and `poc/artifacts/full_maci_reward_anvil/` for Anvil. They are
