@@ -302,8 +302,24 @@ Generate them with:
 
 ```bash
 cd poc
+python3 -m venv .venv
+. .venv/bin/activate
+pip install -r requirements.txt
 npm run experiments:reward
 ```
+
+The evaluation is organized around the questions a reader should ask:
+
+| Reader question | Experiment | Evidence |
+| --- | --- | --- |
+| Does official MACI plus the reward layer run end to end? | Full MACI + reward Anvil run | `full_maci_reward_anvil_latest.json`, proof time, gas data |
+| Does the peer-prediction rule react to report profiles? | Reward sensitivity sweep | Total expected reward under MACI-derived, one-sided, consensus, and alternating reports |
+| Is the sparse lottery payout aligned with expected reward? | Salt-vector lottery trials | Empirical mean payout converges toward theoretical expected payout |
+| Do public stakes affect reward allocation as intended? | Stake concentration sweep | Dominant-stake reward and non-dominant average reward |
+| What is the reward-layer on-chain cost? | Gas breakdown | Root registration, funding, proof verification plus finalization, and claim gas |
+
+More detail is in
+[experiments/reward-evaluation/README.md](experiments/reward-evaluation/README.md).
 
 The data files are CSV/JSON:
 
@@ -317,19 +333,34 @@ The data files are CSV/JSON:
 - `experiments/reward-evaluation/data/full_maci_reward_anvil_latest.json`
 
 The same plots are exported as PNG previews for README and PDF files for paper
-or slide use.
+or slide use. The PDFs are vector figures with embedded fonts.
+
+Reward sensitivity: total expected peer-prediction reward as the incentive scale
+changes across several report profiles. This checks whether the reward rule has
+the intended qualitative behavior before the lottery is applied.
 
 ![Reward sensitivity](experiments/reward-evaluation/figures/reward_sensitivity.png)
 
 PDF: [reward_sensitivity.pdf](experiments/reward-evaluation/figures/reward_sensitivity.pdf)
 
+Lottery payout convergence: repeated deterministic salt-vector samples show that
+the average realized jackpot payout tracks the theoretical expected reward. This
+is evidence about unbiasedness of the lottery reduction, not production
+randomness security.
+
 ![Lottery payout convergence](experiments/reward-evaluation/figures/lottery_unbiasedness.png)
 
 PDF: [lottery_unbiasedness.pdf](experiments/reward-evaluation/figures/lottery_unbiasedness.pdf)
 
+Stake concentration sensitivity: increasing one voter's public stake scales that
+voter's expected reward and shows how stake-weighted incentives enter the rule.
+
 ![Stake concentration sensitivity](experiments/reward-evaluation/figures/stake_concentration.png)
 
 PDF: [stake_concentration.pdf](experiments/reward-evaluation/figures/stake_concentration.pdf)
+
+Reward on-chain cost: reward-layer gas only, separated into state registration,
+funding, proof verification plus finalization, and winner claim.
 
 ![Reward on-chain cost](experiments/reward-evaluation/figures/cost_profile.png)
 

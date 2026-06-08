@@ -1,10 +1,19 @@
 #!/usr/bin/env python3
 
 import csv
-import os
 from pathlib import Path
 
-from PIL import Image, ImageDraw, ImageFont
+try:
+    import matplotlib.pyplot as plt
+    from matplotlib.ticker import FuncFormatter, LogLocator, NullFormatter
+except ModuleNotFoundError as err:
+    raise SystemExit(
+        "Missing matplotlib. From poc/, run:\n"
+        "  python3 -m venv .venv\n"
+        "  . .venv/bin/activate\n"
+        "  pip install -r requirements.txt\n"
+        "Then rerun npm run experiments:reward-plots."
+    ) from err
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -12,29 +21,48 @@ OUT_DIR = REPO_ROOT / "experiments" / "reward-evaluation"
 DATA_DIR = OUT_DIR / "data"
 FIG_DIR = OUT_DIR / "figures"
 
-COLORS = ["#1f77b4", "#d62728", "#2ca02c", "#9467bd", "#ff7f0e", "#17becf"]
-TEXT = "#202124"
-GRID = "#d9dee7"
-AXIS = "#5f6368"
-BG = "#ffffff"
+MILLION = 1_000_000.0
+THOUSAND = 1_000.0
+INK = "#1f2937"
+MUTED = "#6b7280"
+GRID = "#e5e7eb"
+COLORS = {
+    "blue": "#1f77b4",
+    "orange": "#ff7f0e",
+    "green": "#2ca02c",
+    "red": "#d62728",
+    "purple": "#9467bd",
+    "gray": "#7f7f7f",
+}
 
 
-def font(size, bold=False):
-    candidates = [
-        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf" if bold else "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-        "/usr/share/fonts/truetype/liberation2/LiberationSans-Bold.ttf" if bold else "/usr/share/fonts/truetype/liberation2/LiberationSans-Regular.ttf",
-    ]
-    for candidate in candidates:
-        if os.path.exists(candidate):
-            return ImageFont.truetype(candidate, size)
-    return ImageFont.load_default()
-
-
-FONT_TITLE = font(34, True)
-FONT_SUBTITLE = font(20)
-FONT_LABEL = font(18)
-FONT_SMALL = font(15)
-FONT_TINY = font(13)
+def configure_style():
+    plt.rcParams.update(
+        {
+            "font.family": "serif",
+            "font.serif": ["Nimbus Roman", "Times New Roman", "Liberation Serif", "DejaVu Serif"],
+            "mathtext.fontset": "stix",
+            "font.size": 8.5,
+            "axes.labelsize": 8.5,
+            "axes.titlesize": 9,
+            "axes.linewidth": 0.8,
+            "axes.edgecolor": INK,
+            "xtick.labelsize": 7.5,
+            "ytick.labelsize": 7.5,
+            "xtick.color": INK,
+            "ytick.color": INK,
+            "legend.fontsize": 7.4,
+            "legend.frameon": False,
+            "lines.linewidth": 1.7,
+            "lines.markersize": 4.0,
+            "grid.color": GRID,
+            "grid.linewidth": 0.55,
+            "pdf.fonttype": 42,
+            "ps.fonttype": 42,
+            "savefig.bbox": "tight",
+            "savefig.pad_inches": 0.035,
+        }
+    )
 
 
 def read_csv(name):
@@ -42,212 +70,160 @@ def read_csv(name):
         return list(csv.DictReader(handle))
 
 
-def save_figure(image, stem):
+def save(fig, stem):
     FIG_DIR.mkdir(parents=True, exist_ok=True)
-    png = FIG_DIR / f"{stem}.png"
     pdf = FIG_DIR / f"{stem}.pdf"
-    image.save(png)
-    image.convert("RGB").save(pdf, "PDF", resolution=160)
-    print(f"Wrote {png}")
+    png = FIG_DIR / f"{stem}.png"
+    fig.savefig(pdf)
+    fig.savefig(png, dpi=300)
+    plt.close(fig)
     print(f"Wrote {pdf}")
+    print(f"Wrote {png}")
 
 
-def text_center(draw, xy, text, fill, font_obj):
-    bbox = draw.textbbox((0, 0), text, font=font_obj)
-    x, y = xy
-    draw.text((x - (bbox[2] - bbox[0]) / 2, y - (bbox[3] - bbox[1]) / 2), text, fill=fill, font=font_obj)
+def set_common_axes(ax):
+    ax.grid(True, axis="y")
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+    ax.tick_params(axis="both", length=3.0, width=0.7)
+    ax.set_axisbelow(True)
 
 
-def nice_ticks(ymin, ymax, count=5):
-    if ymax <= ymin:
-        ymax = ymin + 1
-    step = (ymax - ymin) / count
-    return [ymin + step * i for i in range(count + 1)]
+def millions(x, _pos):
+    return f"{x / MILLION:.1f}"
 
 
-def draw_axes(draw, area, xmin, xmax, ymin, ymax, xlabel, ylabel, draw_x_ticks=True):
-    left, top, right, bottom = area
-    draw.rectangle(area, outline="#e9edf3", width=1)
-    for value in nice_ticks(ymin, ymax):
-        y = bottom - (value - ymin) / (ymax - ymin) * (bottom - top)
-        draw.line((left, y, right, y), fill=GRID, width=1)
-        draw.text((left - 76, y - 10), f"{value:,.1f}", fill=AXIS, font=FONT_TINY)
-    draw.line((left, bottom, right, bottom), fill=AXIS, width=2)
-    draw.line((left, top, left, bottom), fill=AXIS, width=2)
-    if draw_x_ticks:
-        for value in nice_ticks(xmin, xmax, 4):
-            x = left + (value - xmin) / (xmax - xmin) * (right - left)
-            draw.line((x, bottom, x, bottom + 6), fill=AXIS, width=1)
-            label = f"{value:.0f}" if abs(value) >= 10 else f"{value:.2f}"
-            text_center(draw, (x, bottom + 22), label, AXIS, FONT_TINY)
-    text_center(draw, ((left + right) / 2, bottom + 52), xlabel, AXIS, FONT_LABEL)
-    draw.text((left - 86, top - 34), ylabel, fill=AXIS, font=FONT_LABEL)
+def thousands(x, _pos):
+    return f"{x / THOUSAND:.0f}"
 
 
-def line_chart(title, subtitle, series, xlabel, ylabel, y_scale=1.0, y_suffix="", stem="chart"):
-    width, height = 1200, 720
-    image = Image.new("RGB", (width, height), BG)
-    draw = ImageDraw.Draw(image)
-    draw.text((56, 34), title, fill=TEXT, font=FONT_TITLE)
-    draw.text((58, 78), subtitle, fill=AXIS, font=FONT_SUBTITLE)
-
-    area = (132, 150, 1070, 590)
-    xs = [x for item in series for x, _ in item["points"]]
-    ys = [y / y_scale for item in series for _, y in item["points"]]
-    xmin, xmax = min(xs), max(xs)
-    ymin, ymax = 0, max(ys) * 1.12 if ys else 1
-    if xmax == xmin:
-        xmax = xmin + 1
-    draw_axes(draw, area, xmin, xmax, ymin, ymax, xlabel, ylabel)
-    left, top, right, bottom = area
-
-    for idx, item in enumerate(series):
-        color = COLORS[idx % len(COLORS)]
-        points = []
-        for x, y_value in item["points"]:
-            x_px = left + (x - xmin) / (xmax - xmin) * (right - left)
-            y_px = bottom - ((y_value / y_scale) - ymin) / (ymax - ymin) * (bottom - top)
-            points.append((x_px, y_px))
-        if len(points) > 1:
-            draw.line(points, fill=color, width=4, joint="curve")
-        for point in points:
-            draw.ellipse((point[0] - 5, point[1] - 5, point[0] + 5, point[1] + 5), fill=color)
-        legend_x = 820
-        legend_y = 116 + idx * 28
-        draw.rectangle((legend_x, legend_y, legend_x + 22, legend_y + 12), fill=color)
-        draw.text((legend_x + 32, legend_y - 4), item["label"], fill=TEXT, font=FONT_SMALL)
-
-    if y_suffix:
-        draw.text((956, 604), y_suffix, fill=AXIS, font=FONT_TINY)
-    save_figure(image, stem)
-
-
-def bar_chart(title, subtitle, bars, xlabel, ylabel, y_scale=1.0, stem="bars"):
-    width, height = 1200, 720
-    image = Image.new("RGB", (width, height), BG)
-    draw = ImageDraw.Draw(image)
-    draw.text((56, 34), title, fill=TEXT, font=FONT_TITLE)
-    draw.text((58, 78), subtitle, fill=AXIS, font=FONT_SUBTITLE)
-
-    area = (132, 150, 1070, 590)
-    values = [value / y_scale for _, value in bars]
-    ymax = max(values) * 1.18 if values else 1
-    draw_axes(draw, area, 0, max(len(bars) - 1, 1), 0, ymax, xlabel, ylabel, draw_x_ticks=False)
-    left, top, right, bottom = area
-    slot = (right - left) / max(len(bars), 1)
-    bar_width = slot * 0.58
-    for idx, (label, value) in enumerate(bars):
-        scaled = value / y_scale
-        x0 = left + idx * slot + (slot - bar_width) / 2
-        x1 = x0 + bar_width
-        y0 = bottom - scaled / ymax * (bottom - top)
-        color = COLORS[idx % len(COLORS)]
-        draw.rectangle((x0, y0, x1, bottom), fill=color)
-        text_center(draw, ((x0 + x1) / 2, y0 - 18), f"{scaled:,.0f}", TEXT, FONT_TINY)
-        text_center(draw, ((x0 + x1) / 2, bottom + 24), label, AXIS, FONT_TINY)
-    save_figure(image, stem)
+def percent(x, _pos):
+    return f"{100 * x:.0f}%"
 
 
 def plot_reward_sensitivity():
     rows = read_csv("reward_sensitivity.csv")
-    series = []
-    labels = {
-        "maci_anvil_reports": "MACI-derived profile",
-        "alternating": "alternating reports",
-        "one_sided": "one-sided minority",
-        "consensus": "consensus",
-    }
-    for profile in ["maci_anvil_reports", "alternating", "one_sided", "consensus"]:
-        points = []
-        for row in rows:
-            if row["profile"] == profile and row["smoothing"] == "1":
-                points.append((float(row["kappa"]), float(row["totalExpectedReward"])))
+    profiles = [
+        ("maci_anvil_reports", "MACI-derived", COLORS["blue"], "o"),
+        ("one_sided", "one-sided", COLORS["green"], "s"),
+        ("consensus", "consensus", COLORS["purple"], "^"),
+        ("alternating", "alternating", COLORS["red"], "D"),
+    ]
+
+    fig, ax = plt.subplots(figsize=(3.35, 2.25), constrained_layout=True)
+    for profile, label, color, marker in profiles:
+        points = [
+            (float(row["kappa"]), float(row["totalExpectedReward"]))
+            for row in rows
+            if row["profile"] == profile and row["smoothing"] == "1"
+        ]
         points.sort()
-        series.append({"label": labels[profile], "points": points})
-    line_chart(
-        "Reward sensitivity",
-        "Total expected reward changes with incentive scale and report profile.",
-        series,
-        "kappa",
-        "total expected reward / 1e6",
-        y_scale=1_000_000.0,
-        stem="reward_sensitivity",
-    )
+        xs = [x for x, _ in points]
+        ys = [y for _, y in points]
+        ax.plot(xs, ys, color=color, marker=marker, label=label)
+
+    set_common_axes(ax)
+    ax.set_xlabel(r"Incentive scale $\kappa$")
+    ax.set_ylabel(r"Total expected reward $\sum_i T_i$ ($\times 10^6$)")
+    ax.yaxis.set_major_formatter(FuncFormatter(millions))
+    ax.set_xticks([50, 100, 150])
+    ax.set_xlim(45, 155)
+    ax.set_ylim(bottom=-0.35 * MILLION)
+    ax.legend(ncol=2, loc="upper left", handlelength=1.7, columnspacing=1.0)
+    save(fig, "reward_sensitivity")
 
 
 def plot_lottery_unbiasedness():
     rows = read_csv("lottery_trials.csv")
-    points = [(float(row["trial"]), float(row["cumulativeMeanPayout"])) for row in rows]
+    xs = [float(row["trial"]) for row in rows]
+    ys = [float(row["cumulativeMeanPayout"]) for row in rows]
     expected = float(rows[0]["theoreticalExpectedPayout"])
-    series = [
-        {"label": "empirical cumulative mean", "points": points},
-        {"label": "theoretical expected payout", "points": [(1.0, expected), (float(rows[-1]["trial"]), expected)]},
-    ]
-    line_chart(
-        "Lottery payout convergence",
-        "Repeated user command-salt samples converge toward the expected peer-prediction reward.",
-        series,
-        "sampled command-salt trials",
-        "mean total payout / 1e6",
-        y_scale=1_000_000.0,
-        stem="lottery_unbiasedness",
+    final_error = (ys[-1] - expected) / expected if expected else 0.0
+
+    fig, ax = plt.subplots(figsize=(3.35, 2.25), constrained_layout=True)
+    ax.plot(xs, ys, color=COLORS["blue"], label=r"Realized mean $\bar{P}_t$")
+    ax.axhline(expected, color=COLORS["red"], linestyle=(0, (4, 2)), linewidth=1.5, label=r"Theory $\sum_i T_i$")
+    ax.text(
+        0.98,
+        0.08,
+        rf"$t=512$, rel. error {final_error:+.1%}",
+        transform=ax.transAxes,
+        ha="right",
+        va="bottom",
+        color=MUTED,
+        fontsize=7.2,
     )
+
+    set_common_axes(ax)
+    ax.set_xlabel(r"Salt-vector samples $t$")
+    ax.set_ylabel(r"Mean total payout $\bar{P}_t$ ($\times 10^6$)")
+    ax.yaxis.set_major_formatter(FuncFormatter(millions))
+    ax.set_xlim(0, max(xs))
+    ax.set_ylim(0, max(max(ys), expected) * 1.12)
+    ax.legend(loc="upper right", handlelength=1.9)
+    save(fig, "lottery_unbiasedness")
 
 
 def plot_stake_concentration():
     rows = read_csv("stake_concentration.csv")
-    dominant = [(float(row["dominantStakeShare"]), float(row["dominantExpectedReward"])) for row in rows]
-    average_points = [
-        (float(row["dominantStakeShare"]), float(row["nonDominantAverageExpectedReward"])) for row in rows
-    ]
-    series = [
-        {"label": "dominant voter expected reward", "points": dominant},
-        {"label": "average other voter expected reward", "points": average_points},
-    ]
-    line_chart(
-        "Stake concentration sensitivity",
-        "Increasing one voter's stake raises their expected reward share under public-stake weighting.",
-        series,
-        "dominant voter stake share",
-        "expected reward / 1e6",
-        y_scale=1_000_000.0,
-        stem="stake_concentration",
-    )
+    xs = [float(row["dominantStakeShare"]) for row in rows]
+    dominant = [float(row["dominantExpectedReward"]) for row in rows]
+    others = [float(row["nonDominantAverageExpectedReward"]) for row in rows]
+
+    fig, ax = plt.subplots(figsize=(3.35, 2.25), constrained_layout=True)
+    ax.plot(xs, dominant, color=COLORS["blue"], marker="o", label=r"Voter 2: $T_2$")
+    ax.plot(xs, others, color=COLORS["orange"], marker="s", label=r"Mean others: $\frac{1}{7}\sum_{j\ne2}T_j$")
+
+    set_common_axes(ax)
+    ax.set_yscale("log")
+    ax.yaxis.set_major_locator(LogLocator(base=10, numticks=5))
+    ax.yaxis.set_minor_formatter(NullFormatter())
+    ax.xaxis.set_major_formatter(FuncFormatter(percent))
+    ax.set_xlabel(r"Dominant stake share $w_2 / \sum_j w_j$")
+    ax.set_ylabel(r"Expected reward $T_i$ ($\times 10^6$, log)")
+    ax.set_xlim(min(xs) - 0.03, max(xs) + 0.03)
+    ax.yaxis.set_major_formatter(FuncFormatter(millions))
+    ax.legend(loc="upper left", handlelength=1.7)
+    save(fig, "stake_concentration")
 
 
 def plot_cost_profile():
-    gas_file = DATA_DIR / "gas_breakdown.csv"
-    if gas_file.exists():
-        rows = read_csv("gas_breakdown.csv")
-        bars = [(row["operation"], float(row["gas"])) for row in rows if row.get("operation")]
-        bar_chart(
-            "Reward on-chain cost",
-            "Gas measured on the local Anvil reward flow after proof generation.",
-            bars,
-            "operation",
-            "gas / 1k",
-            y_scale=1_000.0,
-            stem="cost_profile",
-        )
-        return
+    rows = read_csv("gas_breakdown.csv")
+    label_map = {
+        "register": "Register\nroot",
+        "fund": "Fund\npool",
+        "finalize": "Verify +\nfinalize",
+        "claim": "Claim",
+    }
+    labels = [label_map[row["operation"]] for row in rows]
+    values = [float(row["gas"]) for row in rows]
+    colors = [COLORS["blue"], COLORS["gray"], COLORS["green"], COLORS["purple"]]
 
-    rows = read_csv("proof_shape.csv")
-    selected = [row for row in rows if row["metric"] in {"constraints", "public_inputs", "private_inputs"}]
-    bars = [(row["metric"].replace("_", " "), float(row["value"])) for row in selected]
-    bar_chart(
-        "Reward proof shape",
-        "Circuit size summary for the fixed N=8 reward proof.",
-        bars,
-        "metric",
-        "count",
-        y_scale=1.0,
-        stem="cost_profile",
-    )
+    fig, ax = plt.subplots(figsize=(3.35, 2.25), constrained_layout=True)
+    bars = ax.bar(range(len(labels)), values, color=colors, width=0.62)
+    set_common_axes(ax)
+    ax.set_xticks(range(len(labels)), labels)
+    ax.set_ylabel(r"Gas ($\times 10^3$)")
+    ax.yaxis.set_major_formatter(FuncFormatter(thousands))
+    ax.set_ylim(0, max(values) * 1.22)
+
+    for bar, value in zip(bars, values):
+        ax.text(
+            bar.get_x() + bar.get_width() / 2,
+            value + max(values) * 0.025,
+            f"{value / THOUSAND:.0f}k",
+            ha="center",
+            va="bottom",
+            fontsize=7.2,
+            color=INK,
+        )
+    save(fig, "cost_profile")
 
 
 def main():
     if not DATA_DIR.exists():
         raise SystemExit("missing experiment data; run npm run experiments:reward-data first")
+    configure_style()
     plot_reward_sensitivity()
     plot_lottery_unbiasedness()
     plot_stake_concentration()
