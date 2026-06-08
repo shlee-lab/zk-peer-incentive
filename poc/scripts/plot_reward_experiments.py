@@ -115,14 +115,13 @@ def plot_reward_sensitivity():
     profiles = [
         ("maci_anvil_reports", "MACI-derived", COLORS["blue"], "o"),
         ("one_sided", "one-sided", COLORS["green"], "s"),
-        ("consensus", "consensus", COLORS["purple"], "^"),
-        ("alternating", "alternating", COLORS["red"], "D"),
+        ("consensus", "equal-split cases", COLORS["gray"], "^"),
     ]
 
     fig, ax = plt.subplots(figsize=(3.55, 2.45), constrained_layout=True)
     for profile, label, color, marker in profiles:
         points = [
-            (float(row["kappa"]), float(row["totalScore"]))
+            (float(row["kappa"]), float(row["maxPayoutShare"]))
             for row in rows
             if row["profile"] == profile and row["smoothing"] == "1"
         ]
@@ -133,12 +132,19 @@ def plot_reward_sensitivity():
 
     set_common_axes(ax)
     ax.set_xlabel(r"Reward scale $\kappa$", labelpad=4)
-    ax.set_ylabel(r"Raw score mass $\sum_i T_i$ ($\times 10^6$)", labelpad=4)
-    ax.yaxis.set_major_formatter(FuncFormatter(millions))
-    ax.set_xticks([50, 100, 150])
-    ax.set_xlim(45, 155)
-    ax.set_ylim(bottom=-0.35 * MILLION)
-    ax.legend(ncol=2, loc="upper left", handlelength=1.7, columnspacing=1.0)
+    ax.set_ylabel(r"Largest payout share $\max_i P_i/B$", labelpad=4)
+    ax.yaxis.set_major_formatter(FuncFormatter(percent))
+    ax.set_xticks([0, 25, 50, 100, 150])
+    ax.set_xlim(-3, 155)
+    ax.set_ylim(0.10, 0.53)
+    ax.legend(
+        ncol=2,
+        loc="lower left",
+        bbox_to_anchor=(0.0, 1.01),
+        handlelength=1.7,
+        columnspacing=1.0,
+        borderaxespad=0.0,
+    )
     save(fig, "reward_sensitivity")
 
 
@@ -186,8 +192,12 @@ def plot_budget_allocation():
             Patch(facecolor=COLORS["blue"], label="peer match"),
             Patch(facecolor=COLORS["gray"], label="baseline only"),
         ],
-        loc="upper left",
+        loc="lower left",
+        bbox_to_anchor=(0.0, 1.01),
+        ncol=2,
         handlelength=1.2,
+        columnspacing=1.0,
+        borderaxespad=0.0,
     )
     save(fig, "budget_allocation")
 

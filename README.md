@@ -112,16 +112,18 @@ flow runs end to end, whether the fixed-budget reward rule behaves sensibly
 under representative report profiles, how stake weighting affects payout share,
 and what the reward-only on-chain cost looks like.
 
-Reward-rule behavior:
+Reward-scale sensitivity:
 
-This graph is about the raw reward score, not the final payout. The x-axis
-`kappa` is the reward multiplier. Larger `kappa` means matching peer reports get
-stronger scores. The flat alternating line means that, under the current
-ring-peer rule, nobody agrees with their assigned peer, so the raw score stays
-near zero. Stake is fixed across these report profiles, so this chart isolates
-the effect of the report pattern.
+This graph shows a final-payout metric: the largest single payout divided by
+the fixed budget. The x-axis `kappa` is the reward multiplier. At `kappa = 0`,
+everyone gets an equal baseline share. As `kappa` increases, profiles with only
+a few peer matches concentrate more of the fixed budget on those matching
+voters. Consensus and fully alternating profiles stay close to equal-split
+behavior: in consensus everyone matches equally, while in the alternating case
+no one has a peer match. Stake is fixed here, so the chart isolates report
+pattern and reward-scale effects.
 
-![Reward-rule behavior](experiments/reward-evaluation/figures/reward_sensitivity.png)
+![Reward-scale sensitivity](experiments/reward-evaluation/figures/reward_sensitivity.png)
 
 Fixed-budget allocation:
 

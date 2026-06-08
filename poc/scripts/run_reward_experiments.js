@@ -77,7 +77,7 @@ function payoutStats(allocation) {
 function runSweep(profiles) {
   const rows = [];
   const smoothings = [1n, 2n, 5n, 10n];
-  const kappas = [25n, 50n, 100n, 150n];
+  const kappas = [0n, 1n, 5n, 10n, 25n, 50n, 100n, 150n];
   const rewardBudgets = [1_000_000n, 3_000_000n, 10_000_000n];
 
   for (const profile of profiles) {
@@ -177,18 +177,40 @@ function runRewardTable(profiles) {
   const rows = [];
   for (const profile of profiles) {
     for (const smoothing of [1n, 5n, 10n]) {
-      for (const kappa of [50n, 100n, 150n]) {
+      for (const kappa of [0n, 1n, 5n, 10n, 25n, 50n, 100n, 150n]) {
         const common = baseInputs(profile);
-        const witness = computeRewardDivisionWitness({ ...common, smoothing, kappa });
-        const expected = witness.map((reward) => reward.scaled);
+        const allocation = computeFixedBudgetPayouts({
+          ...common,
+          smoothing,
+          kappa,
+          rewardBudget: DEFAULT_BUDGET,
+        });
+        const expected = allocation.rewardWitness.map((reward) => reward.scaled);
+        const stats = payoutStats(allocation);
+        const peerMatches = profile.reports.map((report, index) =>
+          report === profile.reports[common.peerIndices[index]] ? 1 : 0
+        );
+        const peerMatchPayout = allocation.payouts.reduce(
+          (acc, payout, index) => acc + (peerMatches[index] === 1 ? payout : 0n),
+          0n
+        );
         rows.push({
           profile: profile.name,
           smoothing: smoothing.toString(),
           kappa: kappa.toString(),
           totalScore: expected.reduce((acc, value) => acc + value, 0n).toString(),
+          totalAllocationScore: allocation.totalAllocationScore.toString(),
+          peerMatchCount: peerMatches.reduce((acc, value) => acc + value, 0),
+          peerMatchPayout: peerMatchPayout.toString(),
+          peerMatchPayoutShare: decimal(peerMatchPayout, DEFAULT_BUDGET, 6),
           minScore: expected.reduce((acc, value) => (value < acc ? value : acc), expected[0]).toString(),
           medianScore: median(expected).toString(),
           maxScore: expected.reduce((acc, value) => (value > acc ? value : acc), 0n).toString(),
+          minPayout: stats.minPayout.toString(),
+          medianPayout: stats.medianPayout.toString(),
+          maxPayout: stats.maxPayout.toString(),
+          maxPayoutShare: decimal(stats.maxPayout, DEFAULT_BUDGET, 6),
+          totalPayout: stats.totalPayout.toString(),
           reports: profile.reports.join(""),
         });
       }
@@ -259,6 +281,7 @@ async function main() {
     })),
     notes: [
       "Payouts are normalized to a fixed reward budget; total payout equals rewardBudget.",
+      "Reward sensitivity is plotted as max_i P_i / rewardBudget, not raw score mass.",
       "A scale-sized allocation baseline keeps the denominator nonzero for all-zero-score profiles.",
       "Circuit and contract remain fixed at N=8 for this PoC.",
     ],

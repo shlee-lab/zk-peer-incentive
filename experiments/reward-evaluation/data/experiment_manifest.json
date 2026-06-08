@@ -1,11 +1,11 @@
 {
-  "generatedAt": "2026-06-08T15:46:16.287Z",
+  "generatedAt": "2026-06-08T16:14:29.029Z",
   "voters": 8,
   "rewardBudget": "3000000",
   "allocationMode": "fixed_total_budget",
   "allocationBaseline": "scale",
   "stakeDesign": "uniform stakes for report-pattern experiments; stake effects are isolated in stake_concentration.csv",
-  "sweepRows": 192,
+  "sweepRows": 384,
   "allocationRows": 8,
   "profiles": [
     {
@@ -103,6 +103,7 @@
   ],
   "notes": [
     "Payouts are normalized to a fixed reward budget; total payout equals rewardBudget.",
+    "Reward sensitivity is plotted as max_i P_i / rewardBudget, not raw score mass.",
     "A scale-sized allocation baseline keeps the denominator nonzero for all-zero-score profiles.",
     "Circuit and contract remain fixed at N=8 for this PoC."
   ]

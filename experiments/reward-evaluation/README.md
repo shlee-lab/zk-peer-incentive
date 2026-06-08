@@ -29,7 +29,7 @@ reward-layer on-chain cost.
 | Reader question | Matching artifact | What it answers |
 | --- | --- | --- |
 | Does the full system run locally with real MACI? | `data/full_maci_reward_anvil_latest.json` | Shows official MACI deployment, voter signup, encrypted votes, MACI proofs, reward proof, finalization, and one claim on Anvil. |
-| Does the single peer-prediction rule behave sensibly across report patterns? | `figures/reward_sensitivity.pdf` | Runs the same rule under MACI-derived, one-sided, consensus, and alternating binary reports as the incentive scale changes, with stakes fixed. |
+| Does the single peer-prediction rule behave sensibly across report patterns? | `figures/reward_sensitivity.pdf` | Shows how the largest final payout share changes with the reward scale, with stakes fixed. |
 | Does payout preserve the configured total budget? | `figures/budget_allocation.pdf` | Shows per-voter payouts for the MACI-derived profile on a log y-axis, so both peer-match payouts and baseline payouts are visible. |
 | How do public stakes affect incentives? | `figures/stake_concentration.pdf` | Increases one voter's stake and compares that voter's fixed-budget payout with the average of the others. |
 | What are the reward-specific gas costs? | `figures/cost_profile.pdf` | Separates root registration, pool funding, proof verification plus finalization, and recipient claim. |
@@ -38,17 +38,27 @@ reward-layer on-chain cost.
 
 `reward_sensitivity`
 
-This plot does not show final payouts. It shows the raw peer-prediction score
-mass before the fixed `3,000,000` budget is divided.
+This plot shows a final-payout quantity, not an internal score. The y-axis is
+the largest single payout share:
 
-`kappa` is the reward scale parameter. Larger `kappa` makes nonzero
-peer-agreement scores larger. Since the final budget is fixed, `kappa` mainly
-controls how strongly voters with nonzero scores dominate the baseline payout.
+```text
+max_i P_i / B
+```
 
-The alternating profile stays near zero because, with ring peer matching,
-each voter is paired with a voter who reported the opposite value. No peer
-agreement means no raw peer-prediction score. Stakes are equal in this figure,
-so differences come from reports rather than from stake weighting.
+where `B` is the fixed reward budget.
+
+`kappa` is the reward scale parameter. At `kappa = 0`, the peer-prediction score
+is disabled and the budget is split evenly. As `kappa` increases, report
+profiles with only a few peer matches concentrate more of the fixed budget on
+those matching voters.
+
+The MACI-derived profile approaches a 50% largest-payout share because two
+voters match their peers and split almost all of the budget. The one-sided
+profile approaches about one-sixth because six voters match. Consensus and
+alternating are shown as equal-split cases: consensus gives everyone the same
+peer-match status, while alternating gives no one a peer match. Stakes are equal
+in this figure, so differences come from reports rather than from stake
+weighting.
 
 `budget_allocation`
 
@@ -88,8 +98,8 @@ already-finalized payout.
 
 - `parameter_sweep.csv`: wider parameter sweep over report profiles, smoothing,
   scale, reward budget, and stake multiplier.
-- `reward_sensitivity.csv`: reduced data used by the reward-rule behavior
-  figure.
+- `reward_sensitivity.csv`: reduced data used by the reward-scale sensitivity
+  figure, including final payout-share metrics and raw score diagnostics.
 - `budget_allocation.csv`: fixed-budget payout vector for the MACI-derived
   report profile.
 - `stake_concentration.csv`: dominant-stake sweep.
