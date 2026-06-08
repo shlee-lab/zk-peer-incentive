@@ -3,10 +3,10 @@
 This PoC verifies lottery reward-computation correctness for inverse-frequency
 peer-agreement rewards over hidden binary reports and private nonces.
 
-It does not rewrite MACI. The official MACI baseline is exercised separately,
-and this relation is the reward sidecar proof attached to a MACI-derived final
-poll state. The reward proof only shows that the announced payouts are
-consistent with hidden reports and the announced reward rule.
+MACI itself remains unmodified. The official MACI baseline is exercised
+separately, and this relation is the reward sidecar proof attached to a
+MACI-derived final poll state. The reward proof checks that the announced
+payouts are consistent with hidden reports and the announced reward rule.
 
 ## Public Inputs
 
@@ -180,7 +180,7 @@ $$
 
 The circuit uses `circomlib` Poseidon, bit decomposition, and less-than gadgets.
 
-## Security Claim
+## Proof Claim and Scope
 
 Given a sound and zero-knowledge proof system, a valid proof implies that the
 public lottery payouts match the hidden reports and nonces under the announced
@@ -188,14 +188,9 @@ reward rule and public context, and that those same reports/nonces open to the
 nonce commitments and reports included in the public reward sidecar root. The
 proof does not itself reveal the reports or nonces.
 
-The proof also binds payout recipient addresses to the sidecar leaves. It does
-not prove that the sidecar's recipient address mapping was produced by MACI; the
-current integration treats that mapping as an experimental adapter input.
-
-Lottery fairness additionally depends on voters generating unpredictable MACI
-command salts and on the reward adapter consistently extracting those processed
-encrypted commands. A deeper Path B could add an explicit reward nonce field to
-the MACI command and circuits, but that requires regenerating MACI zkeys.
-
-The proof does not show that voters exerted effort. Effort is induced by the
-mechanism-design incentive analysis, not cryptographically proven.
+The proof also binds payout recipient addresses to the same sidecar leaves. The
+MACI-to-recipient adapter, command-salt nonce bridge, and user-effort incentive
+model are application-layer parts of the prototype rather than separate claims
+inside this circuit. A deeper MACI integration could add a dedicated reward
+nonce field to the MACI command and circuits, but that would require new MACI
+zkeys.

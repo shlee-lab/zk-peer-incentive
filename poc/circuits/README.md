@@ -23,9 +23,8 @@ It verifies lottery payouts for hidden binary reports and private nonces using:
 
 This is a reward sidecar relation for an unmodified MACI flow. It proves that
 the private reports and nonces used by the reward computation are bound to a
-MACI-derived reward state root. It does not prove MACI message processing,
-coordinator behavior, or tally correctness; those are exercised by the pinned
-official MACI baseline.
+MACI-derived reward state root. MACI message processing and tally correctness
+remain handled by the pinned official MACI baseline.
 
 ## Install Tools
 

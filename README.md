@@ -1,7 +1,7 @@
 # ZK Peer-Prediction Reward PoC
 
-This repository contains an experimental prototype for adding a
-privacy-preserving reward layer to a MACI voting flow.
+This repository contains a research prototype that connects official MACI with
+a ZK-verifiable peer-prediction reward layer.
 
 In plain terms:
 
@@ -14,13 +14,13 @@ private MACI votes
   -> winner claim
 ```
 
-The implementation currently lives under `poc/`. The prototype is for research
-feasibility. It is not production-audited and does not claim to improve MACI's
-core privacy or security.
+The implementation currently lives under `poc/`. The focus is feasibility:
+showing that private MACI outputs can feed a reward proof and an on-chain reward
+claim flow.
 
 ## Purpose
 
-MACI can prove that encrypted votes were processed and tallied correctly without
+MACI proves that encrypted votes were processed and tallied correctly without
 revealing each voter's individual vote.
 
 This PoC asks a follow-up question:
@@ -96,10 +96,10 @@ leaf_i = Poseidon(maciStateIndex_i, voterId_i, report_i, nonceCommitment_i, stak
 
 The Merkle root of these leaves is the public reward state root.
 
-The reward proof says:
+The reward proof attests:
 
 ```text
-I know hidden reports and nonces such that:
+The prover knows hidden reports and nonces such that:
 1. each report is binary;
 2. each nonce opens to its nonce commitment;
 3. all leaves are included in the public reward state root;
@@ -148,11 +148,9 @@ seed = Poseidon(commandSalt_0, ..., commandSalt_7, pollId, finalRewardStateRoot)
 ```
 
 In the full MACI experiment, each `commandSalt_i` is the salt inside the user's
-encrypted and signed MACI vote command. It is not public, but the MACI proof
-processes the command that contains it. The reward proof later opens the same
-values privately as lottery entropy. This is a B-lite integration that avoids
-rewriting MACI circuits while still moving the reward nonce into the encrypted
-MACI vote payload.
+encrypted and signed MACI vote command. The reward proof opens those salts
+privately as lottery entropy. This keeps official MACI unchanged while tying the
+reward nonce source to the encrypted vote command path.
 
 Each participant either receives:
 
@@ -308,12 +306,12 @@ pip install -r requirements.txt
 npm run experiments:reward
 ```
 
-The evaluation is organized around the questions a reader should ask:
+The evaluation is organized around the main claims of the prototype:
 
-| Reader question | Experiment | Evidence |
+| Claim being checked | Experiment | Evidence |
 | --- | --- | --- |
 | Does official MACI plus the reward layer run end to end? | Full MACI + reward Anvil run | `full_maci_reward_anvil_latest.json`, proof time, gas data |
-| Does the peer-prediction rule react to report profiles? | Reward sensitivity sweep | Total expected reward under MACI-derived, one-sided, consensus, and alternating reports |
+| Does the single peer-prediction reward rule behave as intended? | Reward-rule behavior sweep | Same rule under MACI-derived, one-sided, consensus, and alternating report profiles |
 | Is the sparse lottery payout aligned with expected reward? | Salt-vector lottery trials | Empirical mean payout converges toward theoretical expected payout |
 | Do public stakes affect reward allocation as intended? | Stake concentration sweep | Dominant-stake reward and non-dominant average reward |
 | What is the reward-layer on-chain cost? | Gas breakdown | Root registration, funding, proof verification plus finalization, and claim gas |
@@ -335,27 +333,27 @@ The data files are CSV/JSON:
 The same plots are exported as PNG previews for README and PDF files for paper
 or slide use. The PDFs are vector figures with embedded fonts.
 
-Reward sensitivity: total expected peer-prediction reward as the incentive scale
-changes across several report profiles. This checks whether the reward rule has
-the intended qualitative behavior before the lottery is applied.
+Reward-rule behavior: the same peer-prediction rule is evaluated under several
+representative report profiles while the incentive scale changes. This is a
+calibration and implementation-check plot: it shows whether the implemented
+rule responds to agreement patterns and scale choices in the direction expected
+by the mechanism design.
 
-![Reward sensitivity](experiments/reward-evaluation/figures/reward_sensitivity.png)
+![Reward-rule behavior](experiments/reward-evaluation/figures/reward_sensitivity.png)
 
 PDF: [reward_sensitivity.pdf](experiments/reward-evaluation/figures/reward_sensitivity.pdf)
 
 Lottery payout convergence: repeated deterministic salt-vector samples show that
-the average realized jackpot payout tracks the theoretical expected reward. This
-is evidence about unbiasedness of the lottery reduction, not production
-randomness security.
+the average realized jackpot payout tracks the theoretical expected reward.
 
 ![Lottery payout convergence](experiments/reward-evaluation/figures/lottery_unbiasedness.png)
 
 PDF: [lottery_unbiasedness.pdf](experiments/reward-evaluation/figures/lottery_unbiasedness.pdf)
 
-Stake concentration sensitivity: increasing one voter's public stake scales that
+Stake-weighting behavior: increasing one voter's public stake scales that
 voter's expected reward and shows how stake-weighted incentives enter the rule.
 
-![Stake concentration sensitivity](experiments/reward-evaluation/figures/stake_concentration.png)
+![Stake-weighting behavior](experiments/reward-evaluation/figures/stake_concentration.png)
 
 PDF: [stake_concentration.pdf](experiments/reward-evaluation/figures/stake_concentration.pdf)
 
@@ -416,32 +414,26 @@ poc/zk_relation.md
   More formal description of the reward ZK relation.
 ```
 
-## What This Proves
+## Supported Claim
 
-A successful run supports this limited claim:
+A successful run supports this claim:
 
 > A MACI final voting state can be used as the source for hidden binary reports;
 > a reward sidecar can bind those reports to a public root; and a Groth16 proof
 > can verify peer-prediction lottery payouts from that hidden state before a
 > Solidity contract finalizes claimable rewards.
 
-This is a reward-layer extension around MACI. It is not a replacement for MACI
-and not a claim that MACI's core protocol was improved.
+This is a reward-layer extension around MACI. MACI remains responsible for
+private voting and tally correctness; the new proof handles reward correctness
+from the committed hidden report state.
 
-## Limitations
+## Current Scope
 
-- Not production audited.
-- Uses a fixed `N = 8`.
-- Uses binary reports only.
-- Uses a local development Groth16 setup.
-- Reward sidecar nonce commitments and MACI command-salt extraction are
-  experimental.
-- Recipient addresses are bound to the reward proof and sidecar leaves, but the
-  off-chain mapping from MACI state index to payout address is still
-  experimental.
-- Lottery fairness depends on users generating unpredictable MACI command salts
-  and on the adapter using the processed encrypted commands consistently.
-- Sybil resistance depends on external registration or staking policy.
-- The reward proof verifies payout correctness, not actual human effort.
-- Coordinator privacy and MACI security assumptions remain MACI's responsibility.
-- Official MACI contracts/circuits are not modified or vendored here.
+- Fixed-size `N = 8`, binary-report prototype with a local development Groth16
+  setup.
+- Official MACI is used unchanged; the reward sidecar and command-salt nonce
+  bridge are experimental integration choices.
+- Registration policy, Sybil resistance, token design, scaling, and production
+  audit are outside this prototype.
+- The proof verifies payout correctness from committed hidden reports; it does
+  not cryptographically prove real-world effort.

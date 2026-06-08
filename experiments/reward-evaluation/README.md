@@ -3,10 +3,9 @@
 This directory contains reproducible data and paper-style figures for the
 experimental MACI reward sidecar.
 
-The evaluation is intentionally scoped. It shows feasibility and basic
-mechanism behavior for a fixed `N = 8` prototype. It does not claim production
-security, protocol optimality, user-study validation, or large-scale
-performance.
+The evaluation shows feasibility and mechanism behavior for the fixed `N = 8`
+prototype: a real MACI local run, a reward proof, on-chain reward finalization,
+and small parameter studies around the single peer-prediction reward rule.
 
 ## Evaluation Goal
 
@@ -18,12 +17,12 @@ can bind hidden binary reports to a MACI-derived reward state root, verify
 peer-prediction lottery payouts, and finalize claimable rewards on-chain.
 ```
 
-The experiments are designed to support that claim with five kinds of evidence:
+The experiments support that claim with five kinds of evidence:
 
 - end-to-end execution evidence;
-- reward-rule behavior under different report profiles;
+- behavior of the same reward rule under different report profiles;
 - lottery payout behavior relative to the expected reward;
-- stake-sensitivity behavior;
+- stake-weighting behavior;
 - reward-layer on-chain cost.
 
 ## Reader Questions
@@ -31,7 +30,7 @@ The experiments are designed to support that claim with five kinds of evidence:
 | Reader question | Matching artifact | What it answers |
 | --- | --- | --- |
 | Does the full system run locally with real MACI? | `data/full_maci_reward_anvil_latest.json` | Shows official MACI deployment, voter signup, encrypted votes, MACI proofs, reward proof, finalization, and one claim on Anvil. |
-| Does the reward rule behave sensibly across report patterns? | `figures/reward_sensitivity.pdf` | Compares total expected reward under MACI-derived, one-sided, consensus, and alternating binary reports as the incentive scale changes. |
+| Does the single peer-prediction rule behave sensibly across report patterns? | `figures/reward_sensitivity.pdf` | Runs the same rule under MACI-derived, one-sided, consensus, and alternating binary reports as the incentive scale changes. |
 | Does the lottery preserve expected payout in aggregate? | `figures/lottery_unbiasedness.pdf` | Samples deterministic command-salt vectors and plots the cumulative realized mean against the theoretical expected reward. |
 | How do public stakes affect incentives? | `figures/stake_concentration.pdf` | Increases one voter's stake and compares that voter's expected reward with the average of the others. |
 | What are the reward-specific gas costs? | `figures/cost_profile.pdf` | Separates root registration, pool funding, proof verification plus finalization, and winner claim. |
@@ -42,15 +41,15 @@ The experiments are designed to support that claim with five kinds of evidence:
 
 - `T_i` is the expected peer-prediction reward before lottery sampling.
 - `kappa` is the incentive scale parameter.
-- The plot checks qualitative mechanism behavior, not privacy or security.
+- This is a calibration and implementation-check plot for the proposed
+  peer-prediction rule under representative report profiles and scale choices.
 
 `lottery_unbiasedness`
 
 - `P_i` is the realized lottery payout.
 - `bar(P)_t` is the cumulative mean total payout over `t` sampled salt vectors.
 - The dashed line is the theoretical total expected reward `sum_i T_i`.
-- The sampled salt vectors evaluate the lottery reduction statistically; they
-  are not a production randomness-beacon experiment.
+- The sampled salt vectors evaluate the lottery reducer statistically.
 
 `stake_concentration`
 
@@ -70,7 +69,8 @@ The experiments are designed to support that claim with five kinds of evidence:
 
 - `parameter_sweep.csv`: wider parameter sweep over report profiles, smoothing,
   scale, jackpot amount, and stake multiplier.
-- `reward_sensitivity.csv`: reduced data used by the sensitivity figure.
+- `reward_sensitivity.csv`: reduced data used by the reward-rule behavior
+  figure.
 - `lottery_trials.csv`: repeated lottery realizations for the MACI-derived
   report profile.
 - `stake_concentration.csv`: dominant-stake sweep.
@@ -95,12 +95,10 @@ npm run experiments:reward
 The plotting script writes both PNG previews and vector PDF figures under
 `figures/`.
 
-## What This Does Not Show
+## Scope Boundaries
 
-- It does not benchmark large `N`.
-- It does not modify official MACI circuits to add a new reward-nonce field.
-- It does not prove that users performed costly human effort.
-- It does not solve Sybil resistance.
-- It does not audit the sidecar mapping from MACI state index to recipient
-  address.
-- It does not replace MACI's privacy or correctness assumptions.
+- The data is for a fixed-size `N = 8`, binary-report prototype.
+- The reward nonce uses MACI command salts; a dedicated MACI reward-nonce field
+  would require a deeper MACI circuit change.
+- Production audit, large-scale benchmarking, Sybil resistance, and user-effort
+  validation are separate work.

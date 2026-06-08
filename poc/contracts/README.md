@@ -77,13 +77,10 @@ Run the local Anvil E2E flow:
 npm run e2e:anvil
 ```
 
-## Limitations
+## Contract Scope
 
-- This is an ETH payout sketch, not an ERC20 integration.
-- Recipient addresses are bound to the proof, but the MACI state-index to
-  recipient-address mapping is still an experimental sidecar input.
-- The generated proof must bind `payout[i]` and `recipient[i]` to public signals.
-- Lottery entropy is sourced from MACI encrypted command salts in the full MACI
-  experiment; this adapter mapping is experimental.
-- The report-to-encrypted-vote consistency relation is handled by the
-  MACI-derived reward sidecar state, not by this payout contract.
+- The current payout layer uses ETH for a simple local E2E flow.
+- The contract verifies proof-bound payouts, recipients, poll id, and reward
+  state root before recording claimable balances.
+- MACI vote processing, report derivation, and command-salt extraction are
+  handled by the MACI-side adapter and reward proof generation scripts.
