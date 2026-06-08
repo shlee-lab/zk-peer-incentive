@@ -1,23 +1,22 @@
 # Reward Circuit
 
-`reward_check.circom` is the lottery reward sidecar circuit for the relation in
+`reward_check.circom` is the fixed-budget reward sidecar circuit for the relation in
 `../zk_relation.md`.
 
-It verifies lottery payouts for hidden binary reports and private nonces using:
+It verifies fixed-budget payouts for hidden binary reports and private nonces using:
 
 - smoothed stake-weighted leave-one-out frequency;
 - inverse-frequency peer agreement;
 - ring peer matching, `peer(i) = i+1 mod N`;
 - integer floor payouts via quotient/remainder constraints.
-- Poseidon seed `H(nonces..., disputeId, finalStateRoot)`;
-- per-voter draw `H(seed, i)` with low 32 bits used as the lottery draw.
+- fixed-budget normalization with `allocationScore_i = expectedScaled_i + scale`;
 - Poseidon nonce commitments `H(nonce_i, 0)`;
 - Poseidon reward sidecar leaves
   `H(maciStateIndex_i, voterId_i, report_i, nonceCommitment_i, stake_i, recipient_i)`;
 - fixed-position Merkle openings for all 8 voters to `finalStateRoot`.
 - public recipient addresses bound to the sidecar leaves;
 - explicit range checks for public stakes, parameters, payouts, recipients,
-  expected rewards, and division remainders.
+  expected scores, allocation remainders, and division remainders.
 
 ## Current Scope
 
@@ -88,5 +87,5 @@ kappa[25]
 scale[26]
 disputeId[27]
 finalStateRoot[28]
-rhoTau[29]
+rewardBudget[29]
 ```

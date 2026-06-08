@@ -5,6 +5,7 @@ const {
   aggregateFrequency,
   buildFinalState,
   cmp,
+  computeFixedBudgetPayouts,
   computeLotteryPayouts,
   computeRewards,
   div,
@@ -13,6 +14,7 @@ const {
   mismatchRatios,
   splitLeaveOneOutFrequency,
   verifyMerklePath,
+  verifyFixedBudgetPayouts,
   verifyLotteryPayouts,
   verifyScaledPayouts,
 } = require("./reward_model");
@@ -134,12 +136,24 @@ async function testLotteryPayoutsAndTamperDetection() {
 }
 
 async function testMerkleFinalStateVector() {
-  const vector = require("../vectors/v2/reward_lottery_state.json");
+  const vector = require("../vectors/v2/reward_fixed_budget_state.json");
   const inputs = vector.inputs;
   const finalState = await buildFinalState(inputs);
+  const allocation = computeFixedBudgetPayouts(inputs);
 
   assert.deepStrictEqual(finalState.leaves.map((leaf) => leaf.toString()), vector.leaves);
   assert.strictEqual(finalState.finalStateRoot.toString(), vector.finalStateRoot);
+  assert.deepStrictEqual(
+    allocation.rewardWitness.map((reward) => reward.scaled.toString()),
+    vector.expectedRewards,
+  );
+  assert.deepStrictEqual(
+    allocation.allocationScores.map((score) => score.toString()),
+    vector.allocationScores,
+  );
+  assert.strictEqual(allocation.totalAllocationScore.toString(), vector.totalAllocationScore);
+  assert.deepStrictEqual(allocation.payouts.map((payout) => payout.toString()), vector.payouts);
+  assert.strictEqual(verifyFixedBudgetPayouts(inputs, vector.payouts), true);
 
   for (let i = 0; i < finalState.leaves.length; i += 1) {
     assert.deepStrictEqual(

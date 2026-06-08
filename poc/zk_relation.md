@@ -1,7 +1,8 @@
 # ZK Reward Relation
 
-This PoC verifies lottery reward-computation correctness for inverse-frequency
-peer-agreement rewards over hidden binary reports and private nonces.
+This PoC verifies fixed-budget reward-computation correctness for
+inverse-frequency peer-agreement rewards over hidden binary reports and private
+nonces.
 
 MACI itself remains unmodified. The official MACI baseline is exercised
 separately, and this relation is the reward sidecar proof attached to a
@@ -15,14 +16,14 @@ payouts are consistent with hidden reports and the announced reward rule.
 - `peer(i) = i+1 mod N`: fixed ring peer assignment.
 - `smoothing`: smoothing parameter `a`.
 - `kappa`: reward scale.
-- `scale`: integer scale used for fixed-point payouts.
-- `payout[i]`: public lottery payout for voter `i`.
+- `scale`: integer scale used for fixed-point scores.
+- `payout[i]`: public fixed-budget payout for voter `i`.
 - `recipient[i]`: public payout address for voter `i`, encoded as a 160-bit
   field element.
 - `disputeId`: public dispute or MACI poll context.
 - `finalStateRoot`: public reward sidecar root. In the MACI integration plan this
   is `finalRewardStateRoot`.
-- `rhoTau`: public jackpot payout.
+- `rewardBudget`: public total payout budget.
 
 The current circuit keeps reports/nonces private and binds them to a MACI reward
 sidecar root with fixed-position Merkle openings.
@@ -37,7 +38,7 @@ sidecar root with fixed-position Merkle openings.
 - `nonceCommitments[i]`.
 - `merklePathElements[i][d]`.
 - `expectedScaled[i]`.
-- Remainder witnesses for fixed-point division.
+- Remainder witnesses for fixed-point scoring and fixed-budget allocation.
 
 ## Reward Rule
 
@@ -77,33 +78,40 @@ $$
 \end{cases}
 $$
 
-The expected scaled reward is:
+The expected scaled score is:
 
 $$
 \mathrm{expectedScaled}_i =
 \left\lfloor \tau_i\cdot \mathrm{scale}\right\rfloor.
 $$
 
-The lottery seed is:
+The fixed-budget allocation score is:
 
 $$
-s = H(nonce_0,\ldots,nonce_{N-1}, disputeId, finalStateRoot).
+\alpha_i=\mathrm{expectedScaled}_i+\mathrm{scale}.
 $$
 
-The voter draw is:
+The public payouts are normalized to a fixed budget `B = rewardBudget`:
 
 $$
-u_i = low32(H(s, i)).
+\mathrm{payout}_i \approx
+\frac{B\alpha_i}{\sum_j \alpha_j}.
 $$
 
-The public payout is:
+For integer arithmetic, the first `N-1` payouts are floored:
 
 $$
-\mathrm{payout}_i =
-\begin{cases}
-\rhoTau, & u_i\rhoTau < \mathrm{expectedScaled}_i2^{32},\\
-0, & \text{otherwise.}
-\end{cases}
+\mathrm{payout}_i=
+\left\lfloor
+\frac{B\alpha_i}{\sum_j\alpha_j}
+\right\rfloor
+\qquad 0\le i<N-1.
+$$
+
+The final payout receives the rounding residue:
+
+$$
+\mathrm{payout}_{N-1}=B-\sum_{i=0}^{N-2}\mathrm{payout}_i.
 $$
 
 ## Circuit Checks
@@ -148,13 +156,24 @@ $$
    0\le \mathrm{rem}_i < B_i.
    $$
 
-6. Lottery payout:
+6. Fixed-budget allocation:
 
    $$
-   draw_i\rhoTau < \mathrm{expectedScaled}_i2^{32}
+   B\alpha_i=\mathrm{payout}_i\sum_j\alpha_j+\mathrm{allocRem}_i
+   \qquad 0\le i<N-1
    $$
 
-   iff the public payout equals `rhoTau`; otherwise it equals zero.
+   with
+
+   $$
+   0\le \mathrm{allocRem}_i<\sum_j\alpha_j.
+   $$
+
+   The circuit also enforces:
+
+   $$
+   \sum_i\mathrm{payout}_i=B.
+   $$
 
 7. Reward sidecar nonce opening:
 
@@ -174,7 +193,7 @@ $$
 9. Public range checks:
 
    - `stakes[i]`, `smoothing`, `kappa`, and `scale` fit in 32 bits.
-   - `rhoTau`, `payout[i]`, and `expectedScaled[i]` fit in 64 bits.
+   - `rewardBudget`, `payout[i]`, and `expectedScaled[i]` fit in 64 bits.
    - `recipient[i]` fits in 160 bits.
    - `rem_i` fits within the 128-bit comparison domain.
 
@@ -183,10 +202,10 @@ The circuit uses `circomlib` Poseidon, bit decomposition, and less-than gadgets.
 ## Proof Claim and Scope
 
 Given a sound and zero-knowledge proof system, a valid proof implies that the
-public lottery payouts match the hidden reports and nonces under the announced
-reward rule and public context, and that those same reports/nonces open to the
-nonce commitments and reports included in the public reward sidecar root. The
-proof does not itself reveal the reports or nonces.
+public fixed-budget payouts match the hidden reports and nonces under the
+announced reward rule and public context, and that those same reports/nonces
+open to the nonce commitments and reports included in the public reward sidecar
+root. The proof does not itself reveal the reports or nonces.
 
 The proof also binds payout recipient addresses to the same sidecar leaves. The
 MACI-to-recipient adapter, command-salt nonce bridge, and user-effort incentive

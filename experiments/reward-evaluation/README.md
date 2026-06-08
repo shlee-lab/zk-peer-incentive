@@ -14,14 +14,14 @@ The prototype claim is:
 ```text
 Official MACI can run a private local voting flow, and a separate reward proof
 can bind hidden binary reports to a MACI-derived reward state root, verify
-peer-prediction lottery payouts, and finalize claimable rewards on-chain.
+fixed-budget peer-prediction payouts, and finalize claimable rewards on-chain.
 ```
 
 The experiments support that claim with five kinds of evidence:
 
 - end-to-end execution evidence;
 - behavior of the same reward rule under different report profiles;
-- lottery payout behavior relative to the expected reward;
+- fixed-budget allocation behavior;
 - stake-weighting behavior;
 - reward-layer on-chain cost.
 
@@ -31,31 +31,30 @@ The experiments support that claim with five kinds of evidence:
 | --- | --- | --- |
 | Does the full system run locally with real MACI? | `data/full_maci_reward_anvil_latest.json` | Shows official MACI deployment, voter signup, encrypted votes, MACI proofs, reward proof, finalization, and one claim on Anvil. |
 | Does the single peer-prediction rule behave sensibly across report patterns? | `figures/reward_sensitivity.pdf` | Runs the same rule under MACI-derived, one-sided, consensus, and alternating binary reports as the incentive scale changes. |
-| Does the lottery preserve expected payout in aggregate? | `figures/lottery_unbiasedness.pdf` | Samples deterministic command-salt vectors and plots the cumulative realized mean against the theoretical expected reward. |
-| How do public stakes affect incentives? | `figures/stake_concentration.pdf` | Increases one voter's stake and compares that voter's expected reward with the average of the others. |
-| What are the reward-specific gas costs? | `figures/cost_profile.pdf` | Separates root registration, pool funding, proof verification plus finalization, and winner claim. |
+| Does payout preserve the configured total budget? | `figures/budget_allocation.pdf` | Shows per-voter payouts for the MACI-derived profile and the exact fixed-budget total. |
+| How do public stakes affect incentives? | `figures/stake_concentration.pdf` | Increases one voter's stake and compares that voter's fixed-budget payout with the average of the others. |
+| What are the reward-specific gas costs? | `figures/cost_profile.pdf` | Separates root registration, pool funding, proof verification plus finalization, and recipient claim. |
 
 ## Figure Interpretation
 
 `reward_sensitivity`
 
-- `T_i` is the expected peer-prediction reward before lottery sampling.
+- `T_i` is the unnormalized peer-prediction score before budget normalization.
 - `kappa` is the incentive scale parameter.
 - This is a calibration and implementation-check plot for the proposed
   peer-prediction rule under representative report profiles and scale choices.
 
-`lottery_unbiasedness`
+`budget_allocation`
 
-- `P_i` is the realized lottery payout.
-- `bar(P)_t` is the cumulative mean total payout over `t` sampled salt vectors.
-- The dashed line is the theoretical total expected reward `sum_i T_i`.
-- The sampled salt vectors evaluate the lottery reducer statistically.
+- `P_i` is the fixed-budget payout for voter `i`.
+- `sum_i P_i` equals the configured reward budget.
+- Bars are colored by binary report value for the MACI-derived report profile.
 
 `stake_concentration`
 
 - The dominant voter keeps the same report but receives a larger public stake.
-- The plot checks that the stake-weighted rule scales expected reward in the
-  expected direction.
+- The plot checks that the stake-weighted rule shifts fixed-budget payout share
+  in the expected direction.
 
 `cost_profile`
 
@@ -63,15 +62,15 @@ The experiments support that claim with five kinds of evidence:
 - `Fund pool` deposits reward funds.
 - `Verify + finalize` verifies the Groth16 reward proof and records claimable
   balances.
-- `Claim` withdraws one winner's already-finalized payout.
+- `Claim` withdraws one recipient's already-finalized payout.
 
 ## Data Files
 
 - `parameter_sweep.csv`: wider parameter sweep over report profiles, smoothing,
-  scale, jackpot amount, and stake multiplier.
+  scale, reward budget, and stake multiplier.
 - `reward_sensitivity.csv`: reduced data used by the reward-rule behavior
   figure.
-- `lottery_trials.csv`: repeated lottery realizations for the MACI-derived
+- `budget_allocation.csv`: fixed-budget payout vector for the MACI-derived
   report profile.
 - `stake_concentration.csv`: dominant-stake sweep.
 - `gas_breakdown.csv`: reward-layer gas from the full MACI + reward Anvil run.
@@ -98,7 +97,7 @@ The plotting script writes both PNG previews and vector PDF figures under
 ## Scope Boundaries
 
 - The data is for a fixed-size `N = 8`, binary-report prototype.
-- The reward nonce uses MACI command salts; a dedicated MACI reward-nonce field
-  would require a deeper MACI circuit change.
+- MACI command salts remain part of the sidecar binding; a dedicated MACI reward
+  field would require a deeper MACI circuit change.
 - Production audit, large-scale benchmarking, Sybil resistance, and user-effort
   validation are separate work.

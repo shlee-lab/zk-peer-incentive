@@ -5,7 +5,7 @@ const fs = require("fs");
 const path = require("path");
 const {
   buildFinalState,
-  computeLotteryPayouts,
+  computeFixedBudgetPayouts,
   computeRewardDivisionWitness,
 } = require("../reference/reward_model");
 
@@ -51,8 +51,7 @@ function v2Inputs() {
     smoothing: 1n,
     kappa: 100n,
     scale: 1_000n,
-    rhoTau: 3_000_000n,
-    lotteryBits: 32,
+    rewardBudget: 3_000_000n,
   };
 }
 
@@ -60,19 +59,22 @@ async function main() {
   const inputs = v2Inputs();
   const finalState = await buildFinalState(inputs);
   const sidecarInputs = { ...inputs, nonceCommitments: finalState.nonceCommitments };
-  const lotteryInputs = { ...sidecarInputs, stateRoot: finalState.finalStateRoot };
-  const lottery = await computeLotteryPayouts(lotteryInputs);
+  const rewardInputs = { ...sidecarInputs, stateRoot: finalState.finalStateRoot };
+  const allocation = computeFixedBudgetPayouts(rewardInputs);
   const rewardWitness = computeRewardDivisionWitness(inputs);
-  const payouts = lottery.payouts.map((payout) => payout.toString());
+  const payouts = allocation.payouts.map((payout) => payout.toString());
+  const allocationRemainders = [...allocation.allocationRemainders, 0n].map((remainder) =>
+    remainder.toString()
+  );
 
-  if (lottery.wins.every((win) => win === 0n)) {
-    throw new Error("deterministic v2 vector produced no lottery winners");
+  if (allocation.payouts.reduce((acc, payout) => acc + payout, 0n) !== inputs.rewardBudget) {
+    throw new Error("deterministic v2 vector does not distribute the fixed reward budget");
   }
 
   const vector = {
     version: "v2",
-    description: "Deterministic lottery reward vector bound to a MACI reward sidecar state root.",
-    inputs: lotteryInputs,
+    description: "Deterministic fixed-budget reward vector bound to a MACI reward sidecar state root.",
+    inputs: rewardInputs,
     nonceCommitments: finalState.nonceCommitments.map((commitment) => commitment.toString()),
     leaves: finalState.leaves.map((leaf) => leaf.toString()),
     merklePaths: finalState.paths.map((pathData) => ({
@@ -80,13 +82,12 @@ async function main() {
       pathIndices: pathData.pathIndices,
     })),
     finalStateRoot: finalState.finalStateRoot.toString(),
-    seed: lottery.seed.toString(),
-    lotteryScale: lottery.lotteryScale.toString(),
     expectedRewards: rewardWitness.map((reward) => reward.scaled.toString()),
     rewardRemainders: rewardWitness.map((reward) => reward.remainder.toString()),
-    drawHashes: lottery.drawHashes.map((hash) => hash.toString()),
-    draws: lottery.draws.map((draw) => draw.toString()),
-    wins: lottery.wins.map((win) => win.toString()),
+    allocationBaseline: allocation.allocationBaseline.toString(),
+    allocationScores: allocation.allocationScores.map((score) => score.toString()),
+    totalAllocationScore: allocation.totalAllocationScore.toString(),
+    allocationRemainders,
     payouts,
   };
 
@@ -99,6 +100,7 @@ async function main() {
     merklePathElements: vector.merklePaths.map((pathData) => pathData.pathElements),
     expectedScaled: vector.expectedRewards,
     rewardRemainders: vector.rewardRemainders,
+    allocationRemainders: vector.allocationRemainders,
     payouts,
     recipients: inputs.recipients,
     stakes: inputs.stakes,
@@ -107,12 +109,12 @@ async function main() {
     scale: inputs.scale,
     disputeId: inputs.disputeId,
     finalStateRoot: finalState.finalStateRoot,
-    rhoTau: inputs.rhoTau,
+    rewardBudget: inputs.rewardBudget,
   };
 
-  writeJson(path.join(__dirname, "../vectors/v2/reward_lottery_state.json"), vector);
+  writeJson(path.join(__dirname, "../vectors/v2/reward_fixed_budget_state.json"), vector);
   writeJson(path.join(__dirname, "../artifacts/v2/input.json"), circuitInput);
-  console.log("Wrote vectors/v2/reward_lottery_state.json");
+  console.log("Wrote vectors/v2/reward_fixed_budget_state.json");
   console.log("Wrote artifacts/v2/input.json");
 }
 

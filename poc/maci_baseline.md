@@ -118,8 +118,8 @@ finalRewardStateRoot = MerkleRoot(leaf_1, ..., leaf_N)
 ```
 
 The reward circuit privately opens `nonce_i` to `nonceCommitment_i`, verifies
-Merkle inclusion against `finalRewardStateRoot`, computes the peer-prediction
-lottery rewards, and exposes payouts plus `pollId` and `finalRewardStateRoot` as
+Merkle inclusion against `finalRewardStateRoot`, computes the fixed-budget
+peer-prediction rewards, and exposes payouts plus `pollId` and `finalRewardStateRoot` as
 public signals. The current full MACI experiment uses each encrypted
 `VoteCommand.salt` as the private reward nonce, and the circuit also exposes
 recipient addresses so the payout contract can bind claims to the proof.
@@ -169,14 +169,16 @@ Latest observed Anvil run:
 - Total spent voice credits: `648`.
 - Derived reports: `[1, 0, 1, 1, 0, 0, 1, 0]`.
 - Final reward sidecar root:
-  `5918709685620845749538721862743514405600246650950154740349407238551684212180`.
+  `2806112153934848168283060427080784787707005028340321964253024084722514258563`.
 - Reward nonce source: `MACI VoteCommand.salt`.
-- Reward winner indices: `[2, 4]`.
-- MACI proof phase: `112450 ms`.
-- Reward proof phase: `919 ms`.
+- Reward budget: `3000000`.
+- Fixed-budget payouts: `[907, 907, 2036962, 907, 957593, 907, 907, 910]`.
+- Sample claim index: `0`.
+- MACI proof phase: `120043 ms`.
+- Reward proof phase: `4270 ms`.
 - Reward root registration gas: `93334`.
 - Reward pool funding gas: `47396`.
-- Reward finalization gas: `545197`.
+- Reward finalization gas: `664932`.
 - Reward claim gas: `30706`.
 
 Generated reward artifacts are under `poc/artifacts/full_maci_reward/` for the

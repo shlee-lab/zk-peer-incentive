@@ -66,8 +66,8 @@ function main() {
   expectWitnessFailure("out_of_range_stake", (input) => {
     input.stakes[0] = (1n << 32n).toString();
   });
-  expectWitnessFailure("out_of_range_rho_tau", (input) => {
-    input.rhoTau = (1n << 64n).toString();
+  expectWitnessFailure("out_of_range_reward_budget", (input) => {
+    input.rewardBudget = (1n << 64n).toString();
   });
   expectWitnessFailure("tampered_final_state_root", (input) => {
     input.finalStateRoot = (BigInt(input.finalStateRoot) + 1n).toString();

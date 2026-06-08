@@ -278,6 +278,62 @@ async function verifyLotteryPayouts(inputs, expectedPayouts) {
   return payouts.every((payout, i) => payout === toBigInt(expectedPayouts[i], `expected[${i}]`));
 }
 
+function computeFixedBudgetPayouts({
+  reports,
+  stakes,
+  peerIndices,
+  smoothing = 1n,
+  kappa = 1n,
+  scale = 1_000_000n,
+  rewardBudget,
+}) {
+  assertInputs({ reports, stakes, peerIndices, smoothing, kappa });
+  const budget = toBigInt(rewardBudget, "rewardBudget");
+  if (budget <= 0n) throw new Error("rewardBudget must be positive");
+
+  const rewardWitness = computeRewardDivisionWitness({
+    reports,
+    stakes,
+    peerIndices,
+    smoothing,
+    kappa,
+    scale,
+  });
+  const allocationBaseline = toBigInt(scale, "scale");
+  const allocationScores = rewardWitness.map((reward) => reward.scaled + allocationBaseline);
+  const totalAllocationScore = allocationScores.reduce((acc, score) => acc + score, 0n);
+  if (totalAllocationScore <= 0n) throw new Error("total allocation score must be positive");
+
+  const payouts = [];
+  const allocationRemainders = [];
+  let allocated = 0n;
+  for (let i = 0; i < reports.length - 1; i += 1) {
+    const numerator = budget * allocationScores[i];
+    const payout = numerator / totalAllocationScore;
+    const remainder = numerator % totalAllocationScore;
+    payouts.push(payout);
+    allocationRemainders.push(remainder);
+    allocated += payout;
+  }
+  payouts.push(budget - allocated);
+
+  return {
+    rewardBudget: budget,
+    rewardWitness,
+    allocationBaseline,
+    allocationScores,
+    totalAllocationScore,
+    allocationRemainders,
+    payouts,
+  };
+}
+
+function verifyFixedBudgetPayouts(inputs, expectedPayouts) {
+  const { payouts } = computeFixedBudgetPayouts(inputs);
+  if (expectedPayouts.length !== payouts.length) return false;
+  return payouts.every((payout, i) => payout === toBigInt(expectedPayouts[i], `expected[${i}]`));
+}
+
 async function hashNonceCommitment(nonce) {
   return poseidonHash([toBigInt(nonce, "nonce"), 0n]);
 }
@@ -451,6 +507,7 @@ module.exports = {
   buildFinalState,
   buildMerkleTree,
   cmp,
+  computeFixedBudgetPayouts,
   computeLeaveOneOutNormalizers,
   computeLotteryPayouts,
   computeRewardDivisionWitness,
@@ -468,6 +525,7 @@ module.exports = {
   splitLeaveOneOutFrequency,
   toBigInt,
   verifyMerklePath,
+  verifyFixedBudgetPayouts,
   verifyLotteryPayouts,
   verifyScaledPayouts,
 };

@@ -113,7 +113,7 @@ def plot_reward_sensitivity():
     fig, ax = plt.subplots(figsize=(3.35, 2.25), constrained_layout=True)
     for profile, label, color, marker in profiles:
         points = [
-            (float(row["kappa"]), float(row["totalExpectedReward"]))
+            (float(row["kappa"]), float(row["totalScore"]))
             for row in rows
             if row["profile"] == profile and row["smoothing"] == "1"
         ]
@@ -124,7 +124,7 @@ def plot_reward_sensitivity():
 
     set_common_axes(ax)
     ax.set_xlabel(r"Incentive scale $\kappa$")
-    ax.set_ylabel(r"Total expected reward $\sum_i T_i$ ($\times 10^6$)")
+    ax.set_ylabel(r"Unnormalized score mass $\sum_i T_i$ ($\times 10^6$)")
     ax.yaxis.set_major_formatter(FuncFormatter(millions))
     ax.set_xticks([50, 100, 150])
     ax.set_xlim(45, 155)
@@ -133,46 +133,56 @@ def plot_reward_sensitivity():
     save(fig, "reward_sensitivity")
 
 
-def plot_lottery_unbiasedness():
-    rows = read_csv("lottery_trials.csv")
-    xs = [float(row["trial"]) for row in rows]
-    ys = [float(row["cumulativeMeanPayout"]) for row in rows]
-    expected = float(rows[0]["theoreticalExpectedPayout"])
-    final_error = (ys[-1] - expected) / expected if expected else 0.0
-
+def plot_budget_allocation():
+    rows = read_csv("budget_allocation.csv")
+    labels = [str(int(row["voterIndex"])) for row in rows]
+    payouts = [float(row["payout"]) for row in rows]
+    reports = [int(row["report"]) for row in rows]
+    colors = [COLORS["blue"] if report == 1 else COLORS["orange"] for report in reports]
+    total = sum(payouts)
     fig, ax = plt.subplots(figsize=(3.35, 2.25), constrained_layout=True)
-    ax.plot(xs, ys, color=COLORS["blue"], label=r"Realized mean $\bar{P}_t$")
-    ax.axhline(expected, color=COLORS["red"], linestyle=(0, (4, 2)), linewidth=1.5, label=r"Theory $\sum_i T_i$")
+    bars = ax.bar(range(len(labels)), payouts, color=colors, width=0.62)
+    set_common_axes(ax)
+    ax.set_xlabel("Voter index")
+    ax.set_ylabel(r"Fixed-budget payout $P_i$ ($\times 10^6$)")
+    ax.yaxis.set_major_formatter(FuncFormatter(millions))
+    ax.set_xticks(range(len(labels)), labels)
+    ax.set_ylim(0, max(payouts) * 1.22)
+
+    for bar, value in zip(bars, payouts):
+        if value < 0.05 * MILLION:
+            continue
+        ax.text(
+            bar.get_x() + bar.get_width() / 2,
+            value + max(payouts) * 0.025,
+            f"{value / MILLION:.2f}",
+            ha="center",
+            va="bottom",
+            fontsize=7.0,
+            color=INK,
+        )
     ax.text(
         0.98,
-        0.08,
-        rf"$t=512$, rel. error {final_error:+.1%}",
+        0.94,
+        rf"$\sum_i P_i={total / MILLION:.1f}\times 10^6$",
         transform=ax.transAxes,
         ha="right",
-        va="bottom",
+        va="top",
         color=MUTED,
         fontsize=7.2,
     )
-
-    set_common_axes(ax)
-    ax.set_xlabel(r"Salt-vector samples $t$")
-    ax.set_ylabel(r"Mean total payout $\bar{P}_t$ ($\times 10^6$)")
-    ax.yaxis.set_major_formatter(FuncFormatter(millions))
-    ax.set_xlim(0, max(xs))
-    ax.set_ylim(0, max(max(ys), expected) * 1.12)
-    ax.legend(loc="upper right", handlelength=1.9)
-    save(fig, "lottery_unbiasedness")
+    save(fig, "budget_allocation")
 
 
 def plot_stake_concentration():
     rows = read_csv("stake_concentration.csv")
     xs = [float(row["dominantStakeShare"]) for row in rows]
-    dominant = [float(row["dominantExpectedReward"]) for row in rows]
-    others = [float(row["nonDominantAverageExpectedReward"]) for row in rows]
+    dominant = [float(row["dominantPayout"]) for row in rows]
+    others = [float(row["nonDominantAveragePayout"]) for row in rows]
 
     fig, ax = plt.subplots(figsize=(3.35, 2.25), constrained_layout=True)
-    ax.plot(xs, dominant, color=COLORS["blue"], marker="o", label=r"Voter 2: $T_2$")
-    ax.plot(xs, others, color=COLORS["orange"], marker="s", label=r"Mean others: $\frac{1}{7}\sum_{j\ne2}T_j$")
+    ax.plot(xs, dominant, color=COLORS["blue"], marker="o", label=r"Voter 2: $P_2$")
+    ax.plot(xs, others, color=COLORS["orange"], marker="s", label=r"Mean others: $\frac{1}{7}\sum_{j\ne2}P_j$")
 
     set_common_axes(ax)
     ax.set_yscale("log")
@@ -180,10 +190,10 @@ def plot_stake_concentration():
     ax.yaxis.set_minor_formatter(NullFormatter())
     ax.xaxis.set_major_formatter(FuncFormatter(percent))
     ax.set_xlabel(r"Dominant stake share $w_2 / \sum_j w_j$")
-    ax.set_ylabel(r"Expected reward $T_i$ ($\times 10^6$, log)")
+    ax.set_ylabel(r"Fixed-budget payout $P_i$ ($\times 10^6$, log)")
     ax.set_xlim(min(xs) - 0.03, max(xs) + 0.03)
     ax.yaxis.set_major_formatter(FuncFormatter(millions))
-    ax.legend(loc="upper left", handlelength=1.7)
+    ax.legend(loc="lower left", bbox_to_anchor=(0.0, 1.01), handlelength=1.7, borderaxespad=0.0)
     save(fig, "stake_concentration")
 
 
@@ -225,7 +235,7 @@ def main():
         raise SystemExit("missing experiment data; run npm run experiments:reward-data first")
     configure_style()
     plot_reward_sensitivity()
-    plot_lottery_unbiasedness()
+    plot_budget_allocation()
     plot_stake_concentration()
     plot_cost_profile()
 

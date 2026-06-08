@@ -13,7 +13,7 @@ contract IntegratedRewardPool {
     uint256 public constant SCALE_SIGNAL_INDEX = 26;
     uint256 public constant POLL_ID_SIGNAL_INDEX = 27;
     uint256 public constant FINAL_REWARD_STATE_ROOT_SIGNAL_INDEX = 28;
-    uint256 public constant RHO_TAU_SIGNAL_INDEX = 29;
+    uint256 public constant REWARD_BUDGET_SIGNAL_INDEX = 29;
     uint256 public constant DISPUTE_ID_SIGNAL_INDEX = POLL_ID_SIGNAL_INDEX;
     uint256 public constant FINAL_STATE_ROOT_SIGNAL_INDEX = FINAL_REWARD_STATE_ROOT_SIGNAL_INDEX;
 
@@ -85,7 +85,7 @@ contract IntegratedRewardPool {
         require(dispute.remainingBudget > 0, "unfunded dispute");
         require(recipients.length == amounts.length, "length mismatch");
         require(amounts.length == PAYOUT_COUNT, "wrong payout count");
-        require(publicSignals.length > RHO_TAU_SIGNAL_INDEX, "missing public signals");
+        require(publicSignals.length > REWARD_BUDGET_SIGNAL_INDEX, "missing public signals");
         require(publicSignals[POLL_ID_SIGNAL_INDEX] == disputeId, "poll signal mismatch");
 
         uint256 finalStateRoot = _requireFinalStateRoot(disputeId);
@@ -94,6 +94,7 @@ contract IntegratedRewardPool {
 
         uint256 totalPayout = _recordPayouts(disputeId, recipients, amounts, publicSignals);
 
+        require(totalPayout == publicSignals[REWARD_BUDGET_SIGNAL_INDEX], "budget signal mismatch");
         require(totalPayout <= dispute.remainingBudget, "insufficient budget");
         dispute.remainingBudget -= totalPayout;
         dispute.rewardsFinalized = true;

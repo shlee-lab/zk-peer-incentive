@@ -1,9 +1,11 @@
 {
-  "generatedAt": "2026-06-08T02:02:10.752Z",
+  "generatedAt": "2026-06-08T14:44:11.285Z",
   "voters": 8,
-  "lotteryBits": 32,
+  "rewardBudget": "3000000",
+  "allocationMode": "fixed_total_budget",
+  "allocationBaseline": "scale",
   "sweepRows": 192,
-  "lotteryTrials": 512,
+  "allocationRows": 8,
   "profiles": [
     {
       "name": "maci_anvil_reports",
@@ -99,7 +101,8 @@
     }
   ],
   "notes": [
-    "Lottery trials sample many deterministic user command-salt vectors to evaluate distribution, not to select a production seed.",
+    "Payouts are normalized to a fixed reward budget; total payout equals rewardBudget.",
+    "A scale-sized allocation baseline keeps the denominator nonzero for all-zero-score profiles.",
     "Circuit and contract remain fixed at N=8 for this PoC."
   ]
 }

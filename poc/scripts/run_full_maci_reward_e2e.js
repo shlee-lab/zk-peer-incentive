@@ -449,8 +449,7 @@ describe("full MACI plus reward sidecar E2E", function test() {
       smoothing: "1",
       kappa: "100",
       scale: "1000",
-      rhoTau: "2500000",
-      lotteryBits: 32,
+      rewardBudget: "3000000",
       nonceLabel: "full-maci-reward-sidecar",
     };
     const sidecarFile = path.join(OUTPUT_ROOT, "sidecar_input.json");
@@ -507,12 +506,12 @@ describe("full MACI plus reward sidecar E2E", function test() {
       ),
     );
 
-    const winnerIndex = fixture.amounts.findIndex((amount: string) => BigInt(amount) > 0n);
-    expect(winnerIndex).to.be.greaterThanOrEqual(0);
-    const claimant = await userSigners[winnerIndex].getAddress();
-    expect(claimant).to.eq(fixture.recipients[winnerIndex]);
+    const claimIndex = fixture.amounts.findIndex((amount: string) => BigInt(amount) > 0n);
+    expect(claimIndex).to.be.greaterThanOrEqual(0);
+    const claimant = await userSigners[claimIndex].getAddress();
+    expect(claimant).to.eq(fixture.recipients[claimIndex]);
     const claimable = await pool.claimable(disputeId, claimant);
-    await waitTx("reward.claim", await pool.connect(userSigners[winnerIndex]).claim(disputeId));
+    await waitTx("reward.claim", await pool.connect(userSigners[claimIndex]).claim(disputeId));
 
     console.log(\`maciProofMs=\${maciProofMs}\`);
     console.log(\`rewardProofMs=\${fixture.proofGenerationMs}\`);
@@ -521,7 +520,7 @@ describe("full MACI plus reward sidecar E2E", function test() {
     console.log(\`finalRewardStateRoot=\${fixture.finalStateRoot}\`);
     console.log(\`rewardNonceSource=maci-vote-command-salt\`);
     console.log(\`rewardPool=\${poolAddress}\`);
-    console.log(\`winnerIndex=\${winnerIndex}\`);
+    console.log(\`claimIndex=\${claimIndex}\`);
     console.log(\`claimant=\${claimant}\`);
     console.log(\`claimableBefore=\${claimable.toString()}\`);
     console.log(\`poolBalanceAfter=\${(await signer.provider!.getBalance(poolAddress)).toString()}\`);

@@ -71,9 +71,9 @@ contract IntegratedRewardPoolV3Test {
 
         pool.finalizeRewards(disputeId, recipients, amounts, proof, publicSignals);
 
-        uint256 winnerIndex = firstNonzeroAmountIndex(amounts);
-        address claimant = recipients[winnerIndex];
-        uint256 claimAmount = amounts[winnerIndex];
+        uint256 paidIndex = firstNonzeroAmountIndex(amounts);
+        address claimant = recipients[paidIndex];
+        uint256 claimAmount = amounts[paidIndex];
         require(pool.claimable(disputeId, claimant) == claimAmount, "claimable mismatch");
 
         uint256 beforeBalance = claimant.balance;

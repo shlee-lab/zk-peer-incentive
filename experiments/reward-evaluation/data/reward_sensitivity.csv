@@ -1,4 +1,4 @@
-profile,smoothing,kappa,totalExpectedReward,minExpectedReward,medianExpectedReward,maxExpectedReward,reports
+profile,smoothing,kappa,totalScore,minScore,medianScore,maxScore,reports
 maci_anvil_reports,1,50,1649124,0,0,1121951,10110010
 maci_anvil_reports,1,100,3298249,0,0,2243902,10110010
 maci_anvil_reports,1,150,4947374,0,0,3365853,10110010

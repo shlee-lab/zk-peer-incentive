@@ -6,7 +6,7 @@ const path = require("path");
 const { spawnSync } = require("child_process");
 const {
   buildFinalState,
-  computeLotteryPayouts,
+  computeFixedBudgetPayouts,
   computeRewardDivisionWitness,
 } = require("../reference/reward_model");
 
@@ -102,8 +102,7 @@ function baseInputs(sidecar, attempt) {
     smoothing: BigInt(sidecar.smoothing ?? 1),
     kappa: BigInt(sidecar.kappa ?? 100),
     scale: BigInt(sidecar.scale ?? 1_000),
-    rhoTau: BigInt(sidecar.rhoTau ?? 3_000_000),
-    lotteryBits: Number(sidecar.lotteryBits ?? 32),
+    rewardBudget: BigInt(sidecar.rewardBudget ?? 3_000_000),
   };
 }
 
@@ -111,15 +110,18 @@ async function buildVector(sidecar, attempt) {
   const inputs = baseInputs(sidecar, attempt);
   const finalState = await buildFinalState(inputs);
   const sidecarInputs = { ...inputs, nonceCommitments: finalState.nonceCommitments };
-  const lotteryInputs = { ...sidecarInputs, stateRoot: finalState.finalStateRoot };
-  const lottery = await computeLotteryPayouts(lotteryInputs);
+  const rewardInputs = { ...sidecarInputs, stateRoot: finalState.finalStateRoot };
+  const allocation = computeFixedBudgetPayouts(rewardInputs);
   const rewardWitness = computeRewardDivisionWitness(inputs);
-  const payouts = lottery.payouts.map((payout) => payout.toString());
+  const payouts = allocation.payouts.map((payout) => payout.toString());
+  const allocationRemainders = [...allocation.allocationRemainders, 0n].map((remainder) =>
+    remainder.toString()
+  );
 
   const vector = {
     version: "full-maci-sidecar-v2",
-    description: "Lottery reward vector derived from official MACI final poll reports with recipient and command-salt nonce binding.",
-    inputs: lotteryInputs,
+    description: "Fixed-budget reward vector derived from official MACI final poll reports with recipient and command-salt nonce binding.",
+    inputs: rewardInputs,
     nonceCommitments: finalState.nonceCommitments.map((commitment) => commitment.toString()),
     leaves: finalState.leaves.map((leaf) => leaf.toString()),
     merklePaths: finalState.paths.map((pathData) => ({
@@ -127,13 +129,12 @@ async function buildVector(sidecar, attempt) {
       pathIndices: pathData.pathIndices,
     })),
     finalStateRoot: finalState.finalStateRoot.toString(),
-    seed: lottery.seed.toString(),
-    lotteryScale: lottery.lotteryScale.toString(),
     expectedRewards: rewardWitness.map((reward) => reward.scaled.toString()),
     rewardRemainders: rewardWitness.map((reward) => reward.remainder.toString()),
-    drawHashes: lottery.drawHashes.map((hash) => hash.toString()),
-    draws: lottery.draws.map((draw) => draw.toString()),
-    wins: lottery.wins.map((win) => win.toString()),
+    allocationBaseline: allocation.allocationBaseline.toString(),
+    allocationScores: allocation.allocationScores.map((score) => score.toString()),
+    totalAllocationScore: allocation.totalAllocationScore.toString(),
+    allocationRemainders,
     payouts,
     nonceAttempt: attempt,
   };
@@ -147,6 +148,7 @@ async function buildVector(sidecar, attempt) {
     merklePathElements: vector.merklePaths.map((pathData) => pathData.pathElements),
     expectedScaled: vector.expectedRewards,
     rewardRemainders: vector.rewardRemainders,
+    allocationRemainders: vector.allocationRemainders,
     payouts,
     recipients: inputs.recipients,
     stakes: inputs.stakes,
@@ -155,7 +157,7 @@ async function buildVector(sidecar, attempt) {
     scale: inputs.scale,
     disputeId: inputs.disputeId,
     finalStateRoot: finalState.finalStateRoot,
-    rhoTau: inputs.rhoTau,
+    rewardBudget: inputs.rewardBudget,
   };
 
   return { inputs, vector, circuitInput };
@@ -243,7 +245,7 @@ async function main() {
     maciStateIndices: inputs.maciStateIndices.map((value) => value.toString()),
     tallyPayouts: amounts,
     totalPayout: totalPayout.toString(),
-    winnerIndices: amounts
+    paidRecipientIndices: amounts
       .map((amount, index) => ({ amount: BigInt(amount), index }))
       .filter(({ amount }) => amount > 0n)
       .map(({ index }) => index),

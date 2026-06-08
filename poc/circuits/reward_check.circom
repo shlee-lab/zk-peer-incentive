@@ -3,8 +3,8 @@ pragma circom 2.1.6;
 include "../node_modules/circomlib/circuits/poseidon.circom";
 include "../node_modules/circomlib/circuits/bitify.circom";
 
-// Reward-check circuit for binary reports, ring peer matching, lottery payouts,
-// and MACI reward-sidecar state root binding.
+// Reward-check circuit for binary reports, ring peer matching, fixed-budget
+// reward allocation, and MACI reward-sidecar state root binding.
 //
 // Public signals are ordered with payouts first so RewardPool can compare
 // publicSignals[0..N-1] directly with submitted claim amounts.
@@ -18,7 +18,7 @@ include "../node_modules/circomlib/circuits/bitify.circom";
 // - scale
 // - disputeId (used as pollId for the MACI sidecar integration)
 // - finalStateRoot (the reward sidecar root)
-// - rhoTau
+// - rewardBudget
 //
 // Private witness:
 // - reports[i]
@@ -29,6 +29,7 @@ include "../node_modules/circomlib/circuits/bitify.circom";
 // - merklePathElements[i][d]
 // - expectedScaled[i]
 // - rewardRemainders[i]
+// - allocationRemainders[i]
 //
 // The expected reward is:
 // floor(kappa * stake_i * agreement_i * D_i * scale / B_i) = expectedScaled_i
@@ -37,6 +38,11 @@ include "../node_modules/circomlib/circuits/bitify.circom";
 // D_i = sum_{j != i} stake_j + 2*smoothing
 // N_i = sum_{j != i} stake_j * report_j + smoothing
 // B_i = report_i * N_i + (1-report_i) * (D_i-N_i)
+// The fixed-budget allocation score is expectedScaled_i + scale. The scale-sized
+// baseline keeps the total allocation denominator nonzero and gives an equal
+// fallback when all peer-agreement scores are zero. Payouts 0..N-2 are
+// floor(rewardBudget * score_i / sum(score)); payout N-1 receives the
+// deterministic rounding residue so sum(payouts) equals rewardBudget exactly.
 //
 // Each reward sidecar leaf is:
 // Poseidon(maciStateIndex_i, voterId_i, report_i, nonceCommitment_i, stake_i, recipient_i).
@@ -45,10 +51,7 @@ include "../node_modules/circomlib/circuits/bitify.circom";
 // It then verifies a fixed-position Merkle path for every voter and requires each
 // path to end at finalStateRoot.
 //
-// The seed is Poseidon(nonces..., disputeId, finalStateRoot). For each voter,
-// draw_i is the low LOTTERY_BITS bits of Poseidon(seed, i), and the public
-// payout is rhoTau iff draw_i * rhoTau < expectedScaled_i * 2^LOTTERY_BITS.
-template RewardCheck(N, DEPTH, NBITS, LOTTERY_BITS) {
+template RewardCheck(N, DEPTH, NBITS) {
     signal input reports[N];
     signal input nonces[N];
     signal input maciStateIndices[N];
@@ -57,6 +60,7 @@ template RewardCheck(N, DEPTH, NBITS, LOTTERY_BITS) {
     signal input merklePathElements[N][DEPTH];
     signal input expectedScaled[N];
     signal input rewardRemainders[N];
+    signal input allocationRemainders[N];
 
     signal input payouts[N];
     signal input recipients[N];
@@ -66,13 +70,12 @@ template RewardCheck(N, DEPTH, NBITS, LOTTERY_BITS) {
     signal input scale;
     signal input disputeId;
     signal input finalStateRoot;
-    signal input rhoTau;
+    signal input rewardBudget;
 
     signal totalStake;
     signal totalOneStake;
     signal weightedReport[N];
 
-    component seedHash = Poseidon(N + 2);
     component leafHash[N];
     component nonceCommitmentHash[N];
     component merkleHash[N][DEPTH];
@@ -83,15 +86,16 @@ template RewardCheck(N, DEPTH, NBITS, LOTTERY_BITS) {
     component recipientRange[N];
     component expectedRange[N];
     component remainderRange[N];
+    component allocationRemainderRange[N];
     component smoothingRange = Num2Bits(32);
     component kappaRange = Num2Bits(32);
     component scaleRange = Num2Bits(32);
-    component rhoTauRange = Num2Bits(64);
+    component rewardBudgetRange = Num2Bits(64);
 
     smoothingRange.in <== smoothing;
     kappaRange.in <== kappa;
     scaleRange.in <== scale;
-    rhoTauRange.in <== rhoTau;
+    rewardBudgetRange.in <== rewardBudget;
 
     var totalStakeExpr = 0;
     var totalOneStakeExpr = 0;
@@ -107,8 +111,6 @@ template RewardCheck(N, DEPTH, NBITS, LOTTERY_BITS) {
         expectedRange[i].in <== expectedScaled[i];
         remainderRange[i] = Num2Bits(NBITS);
         remainderRange[i].in <== rewardRemainders[i];
-
-        seedHash.inputs[i] <== nonces[i];
 
         nonceCommitmentHash[i] = Poseidon(2);
         nonceCommitmentHash[i].inputs[0] <== nonces[i];
@@ -141,8 +143,6 @@ template RewardCheck(N, DEPTH, NBITS, LOTTERY_BITS) {
         totalStakeExpr += stakes[i];
         totalOneStakeExpr += weightedReport[i];
     }
-    seedHash.inputs[N] <== disputeId;
-    seedHash.inputs[N + 1] <== finalStateRoot;
 
     totalStake <== totalStakeExpr;
     totalOneStake <== totalOneStakeExpr;
@@ -159,19 +159,18 @@ template RewardCheck(N, DEPTH, NBITS, LOTTERY_BITS) {
     signal numerator[N];
     signal rhs[N];
     signal remLessThanDenom[N];
-    signal expectedLeRhoTau[N];
-    signal draw[N];
-    signal drawTimesRhoTau[N];
-    signal winThreshold[N];
-    signal win[N];
-    signal lotteryPayout[N];
+    signal allocationScore[N];
+    signal totalAllocationScore;
+    signal allocationNumerator[N];
+    signal allocationRhs[N];
+    signal allocationRemLessThanTotal[N];
+    signal payoutSum;
 
     component remBound[N];
-    component expectedBound[N];
-    component drawHash[N];
-    component drawBits[N];
-    component winBound[N];
+    component allocationRemBound[N];
 
+    var totalAllocationScoreExpr = 0;
+    var payoutSumExpr = 0;
     for (var i = 0; i < N; i++) {
         D[i] <== totalStake - stakes[i] + 2 * smoothing;
         NOne[i] <== totalOneStake - weightedReport[i] + smoothing;
@@ -200,38 +199,31 @@ template RewardCheck(N, DEPTH, NBITS, LOTTERY_BITS) {
         remLessThanDenom[i] <== remBound[i].out;
         remLessThanDenom[i] === 1;
 
-        expectedBound[i] = LessThan(NBITS);
-        expectedBound[i].in[0] <== expectedScaled[i];
-        expectedBound[i].in[1] <== rhoTau + 1;
-        expectedLeRhoTau[i] <== expectedBound[i].out;
-        expectedLeRhoTau[i] === 1;
+        allocationScore[i] <== expectedScaled[i] + scale;
+        totalAllocationScoreExpr += allocationScore[i];
+        payoutSumExpr += payouts[i];
+    }
+    totalAllocationScore <== totalAllocationScoreExpr;
+    payoutSum <== payoutSumExpr;
+    payoutSum === rewardBudget;
 
-        drawHash[i] = Poseidon(2);
-        drawHash[i].inputs[0] <== seedHash.out;
-        drawHash[i].inputs[1] <== i;
+    for (var i = 0; i < N; i++) {
+        allocationRemainderRange[i] = Num2Bits(NBITS);
+        allocationRemainderRange[i].in <== allocationRemainders[i];
+        if (i + 1 < N) {
+            allocationNumerator[i] <== rewardBudget * allocationScore[i];
+            allocationRhs[i] <== payouts[i] * totalAllocationScore + allocationRemainders[i];
+            allocationNumerator[i] === allocationRhs[i];
 
-        drawBits[i] = Num2Bits_strict();
-        drawBits[i].in <== drawHash[i].out;
-
-        var drawExpr = 0;
-        var bitValue = 1;
-        for (var b = 0; b < LOTTERY_BITS; b++) {
-            drawExpr += drawBits[i].out[b] * bitValue;
-            bitValue *= 2;
+            allocationRemBound[i] = LessThan(NBITS);
+            allocationRemBound[i].in[0] <== allocationRemainders[i];
+            allocationRemBound[i].in[1] <== totalAllocationScore;
+            allocationRemLessThanTotal[i] <== allocationRemBound[i].out;
+            allocationRemLessThanTotal[i] === 1;
+        } else {
+            allocationRemainders[i] === 0;
         }
-        draw[i] <== drawExpr;
-
-        drawTimesRhoTau[i] <== draw[i] * rhoTau;
-        winThreshold[i] <== expectedScaled[i] * (1 << LOTTERY_BITS);
-
-        winBound[i] = LessThan(NBITS);
-        winBound[i].in[0] <== drawTimesRhoTau[i];
-        winBound[i].in[1] <== winThreshold[i];
-        win[i] <== winBound[i].out;
-
-        lotteryPayout[i] <== rhoTau * win[i];
-        lotteryPayout[i] === payouts[i];
     }
 }
 
-component main { public [payouts, recipients, stakes, smoothing, kappa, scale, disputeId, finalStateRoot, rhoTau] } = RewardCheck(8, 3, 128, 32);
+component main { public [payouts, recipients, stakes, smoothing, kappa, scale, disputeId, finalStateRoot, rewardBudget] } = RewardCheck(8, 3, 128);
