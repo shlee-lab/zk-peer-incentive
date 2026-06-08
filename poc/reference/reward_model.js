@@ -211,7 +211,6 @@ async function computeLotteryPayouts({
   nonces,
   disputeId,
   stateRoot,
-  randomness,
   smoothing = 1n,
   kappa = 1n,
   scale = 1_000_000n,
@@ -238,15 +237,11 @@ async function computeLotteryPayouts({
     scale,
   });
   const lotteryScale = 1n << BigInt(lotteryBits);
-  const seedInputs = [
+  const seed = await poseidonHash([
     ...nonces.map((nonce, i) => toBigInt(nonce, `nonces[${i}]`)),
     toBigInt(disputeId, "disputeId"),
     toBigInt(stateRoot, "stateRoot"),
-  ];
-  if (randomness !== undefined) {
-    seedInputs.push(toBigInt(randomness, "randomness"));
-  }
-  const seed = await poseidonHash(seedInputs);
+  ]);
 
   const draws = [];
   const drawHashes = [];

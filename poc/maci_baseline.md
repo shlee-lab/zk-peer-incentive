@@ -112,9 +112,9 @@ finalRewardStateRoot = MerkleRoot(leaf_1, ..., leaf_N)
 The reward circuit will privately open `nonce_i` to `nonceCommitment_i`, verify
 Merkle inclusion against `finalRewardStateRoot`, compute the peer-prediction
 lottery rewards, and expose payouts plus `pollId` and `finalRewardStateRoot` as
-public signals. The current circuit also exposes recipient addresses and
-registered reward randomness as public signals so the payout contract can bind
-claims to the proof and registry entry.
+public signals. The current full MACI experiment uses each encrypted
+`VoteCommand.salt` as the private reward nonce, and the circuit also exposes
+recipient addresses so the payout contract can bind claims to the proof.
 
 This remains experimental. The MACI baseline is real; the reward sidecar binding
 is a PoC adapter and is not a production security claim.

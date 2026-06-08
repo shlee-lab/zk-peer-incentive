@@ -2,13 +2,9 @@
 pragma solidity ^0.8.24;
 
 contract FinalStateRegistry {
-    uint256 internal constant SNARK_SCALAR_FIELD =
-        21888242871839275222246405745257275088548364400416034343698204186575808495617;
-
     struct FinalState {
         uint256 finalStateRoot;
         uint256 tallyResult;
-        uint256 rewardRandomness;
         bool maciTallyVerified;
         bool finalized;
     }
@@ -21,7 +17,6 @@ contract FinalStateRegistry {
         uint256 indexed disputeId,
         uint256 finalStateRoot,
         uint256 tallyResult,
-        uint256 rewardRandomness,
         bool maciTallyVerified
     );
 
@@ -42,13 +37,7 @@ contract FinalStateRegistry {
     }
 
     function registerFinalState(uint256 disputeId, uint256 finalStateRoot, uint256 tallyResult) external onlyOwner {
-        registerFinalStateWithMaciStatusAndRandomness(
-            disputeId,
-            finalStateRoot,
-            tallyResult,
-            _deriveRewardRandomness(disputeId, finalStateRoot, tallyResult),
-            true
-        );
+        registerFinalStateWithMaciStatus(disputeId, finalStateRoot, tallyResult, true);
     }
 
     function registerFinalStateWithMaciStatus(
@@ -57,45 +46,18 @@ contract FinalStateRegistry {
         uint256 tallyResult,
         bool maciTallyVerified
     ) public onlyOwner {
-        registerFinalStateWithMaciStatusAndRandomness(
-            disputeId,
-            finalStateRoot,
-            tallyResult,
-            _deriveRewardRandomness(disputeId, finalStateRoot, tallyResult),
-            maciTallyVerified
-        );
-    }
-
-    function registerFinalStateWithRandomness(
-        uint256 disputeId,
-        uint256 finalStateRoot,
-        uint256 tallyResult,
-        uint256 rewardRandomness
-    ) external onlyOwner {
-        registerFinalStateWithMaciStatusAndRandomness(disputeId, finalStateRoot, tallyResult, rewardRandomness, true);
-    }
-
-    function registerFinalStateWithMaciStatusAndRandomness(
-        uint256 disputeId,
-        uint256 finalStateRoot,
-        uint256 tallyResult,
-        uint256 rewardRandomness,
-        bool maciTallyVerified
-    ) public onlyOwner {
         require(finalStateRoot != 0, "zero root");
-        require(rewardRandomness != 0, "zero randomness");
         require(!finalStates[disputeId].finalized, "already finalized");
 
         finalStates[disputeId] =
             FinalState({
                 finalStateRoot: finalStateRoot,
                 tallyResult: tallyResult,
-                rewardRandomness: rewardRandomness,
                 maciTallyVerified: maciTallyVerified,
                 finalized: true
             });
 
-        emit FinalStateRegistered(disputeId, finalStateRoot, tallyResult, rewardRandomness, maciTallyVerified);
+        emit FinalStateRegistered(disputeId, finalStateRoot, tallyResult, maciTallyVerified);
     }
 
     function isFinalized(uint256 disputeId) external view returns (bool) {
@@ -104,17 +66,5 @@ contract FinalStateRegistry {
 
     function finalStateRootOf(uint256 disputeId) external view returns (uint256) {
         return finalStates[disputeId].finalStateRoot;
-    }
-
-    function rewardRandomnessOf(uint256 disputeId) external view returns (uint256) {
-        return finalStates[disputeId].rewardRandomness;
-    }
-
-    function _deriveRewardRandomness(uint256 disputeId, uint256 finalStateRoot, uint256 tallyResult)
-        internal
-        pure
-        returns (uint256)
-    {
-        return (uint256(keccak256(abi.encodePacked(disputeId, finalStateRoot, tallyResult))) % (SNARK_SCALAR_FIELD - 1)) + 1;
     }
 }

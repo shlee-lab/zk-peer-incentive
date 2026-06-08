@@ -5,7 +5,7 @@ import "./IRewardVerifier.sol";
 import "./RewardGroth16Verifier.sol";
 
 contract RewardVerifierAdapter is IRewardVerifier {
-    uint256 public constant PUBLIC_SIGNAL_COUNT = 31;
+    uint256 public constant PUBLIC_SIGNAL_COUNT = 30;
 
     Groth16Verifier public immutable verifier;
 
@@ -21,7 +21,7 @@ contract RewardVerifierAdapter is IRewardVerifier {
         (uint256[2] memory a, uint256[2][2] memory b, uint256[2] memory c) =
             abi.decode(proof, (uint256[2], uint256[2][2], uint256[2]));
 
-        uint256[31] memory signals;
+        uint256[30] memory signals;
         for (uint256 i = 0; i < PUBLIC_SIGNAL_COUNT; i++) {
             signals[i] = publicSignals[i];
         }

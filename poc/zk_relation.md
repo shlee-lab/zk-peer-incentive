@@ -22,8 +22,6 @@ consistent with hidden reports and the announced reward rule.
 - `disputeId`: public dispute or MACI poll context.
 - `finalStateRoot`: public reward sidecar root. In the MACI integration plan this
   is `finalRewardStateRoot`.
-- `rewardRandomness`: public draw entropy registered for this final reward
-  state.
 - `rhoTau`: public jackpot payout.
 
 The current circuit keeps reports/nonces private and binds them to a MACI reward
@@ -32,7 +30,8 @@ sidecar root with fixed-position Merkle openings.
 ## Private Witness
 
 - `reports[i] in {0,1}`.
-- `nonces[i]`.
+- `nonces[i]`: in the full MACI experiment, this is the encrypted MACI
+  `VoteCommand.salt` value for voter `i`.
 - `maciStateIndices[i]`.
 - `voterIds[i]`.
 - `nonceCommitments[i]`.
@@ -88,7 +87,7 @@ $$
 The lottery seed is:
 
 $$
-s = H(nonce_0,\ldots,nonce_{N-1}, disputeId, finalStateRoot, rewardRandomness).
+s = H(nonce_0,\ldots,nonce_{N-1}, disputeId, finalStateRoot).
 $$
 
 The voter draw is:
@@ -193,9 +192,10 @@ The proof also binds payout recipient addresses to the sidecar leaves. It does
 not prove that the sidecar's recipient address mapping was produced by MACI; the
 current integration treats that mapping as an experimental adapter input.
 
-Lottery fairness additionally depends on `rewardRandomness` being generated
-after the final reward state is fixed and without coordinator control. A
-production design should use a VRF, randomness beacon, or commit-reveal flow.
+Lottery fairness additionally depends on voters generating unpredictable MACI
+command salts and on the reward adapter consistently extracting those processed
+encrypted commands. A deeper Path B could add an explicit reward nonce field to
+the MACI command and circuits, but that requires regenerating MACI zkeys.
 
 The proof does not show that voters exerted effort. Effort is induced by the
 mechanism-design incentive analysis, not cryptographically proven.

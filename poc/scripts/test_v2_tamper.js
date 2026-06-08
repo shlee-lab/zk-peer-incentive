@@ -72,9 +72,6 @@ function main() {
   expectWitnessFailure("tampered_final_state_root", (input) => {
     input.finalStateRoot = (BigInt(input.finalStateRoot) + 1n).toString();
   });
-  expectWitnessFailure("tampered_randomness", (input) => {
-    input.randomness = "0";
-  });
   expectWitnessFailure("tampered_payout", (input) => {
     input.payouts[0] = (BigInt(input.payouts[0]) + 1n).toString();
   });

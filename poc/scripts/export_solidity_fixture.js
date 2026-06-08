@@ -119,7 +119,6 @@ ${proofBytes(proof)}
       totalPayout: totalPayout.toString(),
       disputeId: publicSignals[27],
       finalStateRoot: publicSignals[28],
-      rewardRandomness: publicSignals[29],
     };
     fs.mkdirSync(path.dirname(jsonOutputFile), { recursive: true });
     fs.writeFileSync(jsonOutputFile, `${JSON.stringify(jsonFixture, null, 2)}\n`);

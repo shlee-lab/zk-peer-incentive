@@ -92,12 +92,11 @@ function baseInputs(profile) {
   };
 }
 
-async function lotteryFromExpected({ nonces, disputeId, finalStateRoot, randomness, expectedScaled, rhoTau }) {
+async function lotteryFromExpected({ nonces, disputeId, finalStateRoot, expectedScaled, rhoTau }) {
   const seed = await poseidonHash([
     ...nonces,
     disputeId,
     finalStateRoot,
-    randomness,
   ]);
   let totalPayout = 0n;
   let winnerCount = 0;
@@ -114,6 +113,22 @@ async function lotteryFromExpected({ nonces, disputeId, finalStateRoot, randomne
   return { payouts, totalPayout, winnerCount };
 }
 
+async function buildTrialStates(profile, count, label) {
+  const states = [];
+  for (let trial = 0; trial < count; trial += 1) {
+    const inputs = {
+      ...baseInputs(profile),
+      nonces: Array.from({ length: N }, (_, i) => fieldElement(`${label} ${profile.name} trial ${trial} maci command salt ${i}`)),
+    };
+    const finalState = await buildFinalState(inputs);
+    states.push({
+      nonces: inputs.nonces,
+      finalStateRoot: finalState.finalStateRoot,
+    });
+  }
+  return states;
+}
+
 async function runSweep(profiles) {
   const rows = [];
   const smoothings = [1n, 2n, 5n, 10n];
@@ -123,7 +138,7 @@ async function runSweep(profiles) {
 
   for (const profile of profiles) {
     const common = baseInputs(profile);
-    const finalState = await buildFinalState(common);
+    const trialStates = await buildTrialStates(profile, trials, "sweep");
     for (const smoothing of smoothings) {
       for (const kappa of kappas) {
         const witness = computeRewardDivisionWitness({
@@ -141,11 +156,11 @@ async function runSweep(profiles) {
           let empiricalWinners = 0;
           if (valid) {
             for (let trial = 0; trial < trials; trial += 1) {
+              const trialState = trialStates[trial];
               const result = await lotteryFromExpected({
-                nonces: common.nonces,
+                nonces: trialState.nonces,
                 disputeId: common.disputeId,
-                finalStateRoot: finalState.finalStateRoot,
-                randomness: fieldElement(`sweep ${profile.name} ${smoothing} ${kappa} ${rhoTau} ${trial}`),
+                finalStateRoot: trialState.finalStateRoot,
                 expectedScaled,
                 rhoTau,
               });
@@ -180,10 +195,11 @@ async function runSweep(profiles) {
 
 async function runLotteryTrials(profile) {
   const common = baseInputs(profile);
-  const finalState = await buildFinalState(common);
   const smoothing = 1n;
   const kappa = 100n;
   const rhoTau = 3_000_000n;
+  const trials = 512;
+  const trialStates = await buildTrialStates(profile, trials, "lottery trace");
   const witness = computeRewardDivisionWitness({
     ...common,
     smoothing,
@@ -194,14 +210,13 @@ async function runLotteryTrials(profile) {
   const rows = [];
   let cumulativePayout = 0n;
   let cumulativeWinners = 0;
-  const trials = 512;
 
   for (let trial = 0; trial < trials; trial += 1) {
+    const trialState = trialStates[trial];
     const result = await lotteryFromExpected({
-      nonces: common.nonces,
+      nonces: trialState.nonces,
       disputeId: common.disputeId,
-      finalStateRoot: finalState.finalStateRoot,
-      randomness: fieldElement(`lottery trace ${profile.name} ${trial}`),
+      finalStateRoot: trialState.finalStateRoot,
       expectedScaled,
       rhoTau,
     });
@@ -279,9 +294,9 @@ function writeProofShape() {
   writeCsv(path.join(DATA_DIR, "proof_shape.csv"), [
     { metric: "voters", value: 8 },
     { metric: "merkle_depth", value: 3 },
-    { metric: "public_inputs", value: 31 },
+    { metric: "public_inputs", value: 30 },
     { metric: "private_inputs", value: 80 },
-    { metric: "constraints", value: 23881 },
+    { metric: "constraints", value: 23875 },
     { metric: "lottery_bits", value: LOTTERY_BITS },
   ]);
 }
@@ -333,7 +348,7 @@ async function main() {
       stakes: profile.stakes.map((stake) => stake.toString()),
     })),
     notes: [
-      "Lottery trials intentionally sample many public randomness values to evaluate distribution, not to select a production seed.",
+      "Lottery trials sample many deterministic user command-salt vectors to evaluate distribution, not to select a production seed.",
       "Circuit and contract remain fixed at N=8 for this PoC.",
     ],
   });

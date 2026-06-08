@@ -18,7 +18,6 @@ include "../node_modules/circomlib/circuits/bitify.circom";
 // - scale
 // - disputeId (used as pollId for the MACI sidecar integration)
 // - finalStateRoot (the reward sidecar root)
-// - randomness (public draw entropy registered after the final reward state)
 // - rhoTau
 //
 // Private witness:
@@ -46,8 +45,8 @@ include "../node_modules/circomlib/circuits/bitify.circom";
 // It then verifies a fixed-position Merkle path for every voter and requires each
 // path to end at finalStateRoot.
 //
-// The seed is Poseidon(nonces..., disputeId, finalStateRoot, randomness). For each
-// voter, draw_i is the low LOTTERY_BITS bits of Poseidon(seed, i), and the public
+// The seed is Poseidon(nonces..., disputeId, finalStateRoot). For each voter,
+// draw_i is the low LOTTERY_BITS bits of Poseidon(seed, i), and the public
 // payout is rhoTau iff draw_i * rhoTau < expectedScaled_i * 2^LOTTERY_BITS.
 template RewardCheck(N, DEPTH, NBITS, LOTTERY_BITS) {
     signal input reports[N];
@@ -67,14 +66,13 @@ template RewardCheck(N, DEPTH, NBITS, LOTTERY_BITS) {
     signal input scale;
     signal input disputeId;
     signal input finalStateRoot;
-    signal input randomness;
     signal input rhoTau;
 
     signal totalStake;
     signal totalOneStake;
     signal weightedReport[N];
 
-    component seedHash = Poseidon(N + 3);
+    component seedHash = Poseidon(N + 2);
     component leafHash[N];
     component nonceCommitmentHash[N];
     component merkleHash[N][DEPTH];
@@ -145,7 +143,6 @@ template RewardCheck(N, DEPTH, NBITS, LOTTERY_BITS) {
     }
     seedHash.inputs[N] <== disputeId;
     seedHash.inputs[N + 1] <== finalStateRoot;
-    seedHash.inputs[N + 2] <== randomness;
 
     totalStake <== totalStakeExpr;
     totalOneStake <== totalOneStakeExpr;
@@ -237,4 +234,4 @@ template RewardCheck(N, DEPTH, NBITS, LOTTERY_BITS) {
     }
 }
 
-component main { public [payouts, recipients, stakes, smoothing, kappa, scale, disputeId, finalStateRoot, randomness, rhoTau] } = RewardCheck(8, 3, 128, 32);
+component main { public [payouts, recipients, stakes, smoothing, kappa, scale, disputeId, finalStateRoot, rhoTau] } = RewardCheck(8, 3, 128, 32);

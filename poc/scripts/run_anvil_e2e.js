@@ -160,7 +160,6 @@ async function main() {
     const fixture = readJson(path.join(__dirname, "../vectors/v2/reward_proof_fixture.json"));
     const disputeId = ethers.BigNumber.from(fixture.disputeId);
     const finalStateRoot = ethers.BigNumber.from(fixture.finalStateRoot);
-    const rewardRandomness = ethers.BigNumber.from(fixture.rewardRandomness);
     const totalPayout = ethers.BigNumber.from(fixture.totalPayout);
     const proof = encodeProof(fixture.proof);
 
@@ -195,7 +194,7 @@ async function main() {
 
     await waitTx(
       "registerFinalState",
-      await registry.registerFinalStateWithRandomness(disputeId, finalStateRoot, 1, rewardRandomness),
+      await registry.registerFinalState(disputeId, finalStateRoot, 1),
       metrics,
     );
     await waitTx("fundDispute", await pool.fundDispute(disputeId, { value: totalPayout }), metrics);
@@ -222,7 +221,6 @@ async function main() {
 
     console.log(`disputeId=${disputeId.toString()}`);
     console.log(`finalStateRoot=${finalStateRoot.toString()}`);
-    console.log(`rewardRandomness=${rewardRandomness.toString()}`);
     console.log(`winnerIndex=${winner.index}`);
     console.log(`claimant=${claimant}`);
     console.log(`fixtureClaimAmount=${winner.amount}`);
@@ -234,7 +232,6 @@ async function main() {
     metrics.context = {
       disputeId: disputeId.toString(),
       finalStateRoot: finalStateRoot.toString(),
-      rewardRandomness: rewardRandomness.toString(),
       totalPayout: totalPayout.toString(),
       winnerIndex: winner.index,
       claimant,

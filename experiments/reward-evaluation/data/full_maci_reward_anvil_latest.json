@@ -6,24 +6,24 @@
     "totalSpentVoiceCredits": "648"
   },
   "reports": [1, 0, 1, 1, 0, 0, 1, 0],
-  "finalRewardStateRoot": "7169802589688111173330386380848112532285602135796422622859552470452160090463",
-  "rewardRandomness": "14526973487272673442968073038832824276367766208387535527132383916993394146268",
+  "finalRewardStateRoot": "5918709685620845749538721862743514405600246650950154740349407238551684212180",
+  "rewardNonceSource": "maci-vote-command-salt",
   "winnerIndices": [2, 4],
-  "totalPayout": "6000000",
+  "totalPayout": "5000000",
   "proofTimesMs": {
-    "maci": 109063,
-    "reward": 3339
+    "maci": 112450,
+    "reward": 919
   },
   "rewardGas": {
-    "registerFinalState": 116309,
+    "registerFinalState": 93334,
     "fundDispute": 47396,
-    "finalizeRewards": 554847,
-    "claim": 30684
+    "finalizeRewards": 545197,
+    "claim": 30706
   },
   "rewardDeployGas": {
-    "RewardGroth16Verifier": 957380,
+    "RewardGroth16Verifier": 937075,
     "RewardVerifierAdapter": 328329,
-    "FinalStateRegistry": 517322,
-    "IntegratedRewardPool": 1226980
+    "FinalStateRegistry": 365305,
+    "IntegratedRewardPool": 1193529
   }
 }

@@ -9,7 +9,7 @@ It verifies lottery payouts for hidden binary reports and private nonces using:
 - inverse-frequency peer agreement;
 - ring peer matching, `peer(i) = i+1 mod N`;
 - integer floor payouts via quotient/remainder constraints.
-- Poseidon seed `H(nonces..., disputeId, finalStateRoot, rewardRandomness)`;
+- Poseidon seed `H(nonces..., disputeId, finalStateRoot)`;
 - per-voter draw `H(seed, i)` with low 32 bits used as the lottery draw.
 - Poseidon nonce commitments `H(nonce_i, 0)`;
 - Poseidon reward sidecar leaves
@@ -75,7 +75,10 @@ The integrated registry/reward-pool flow on Anvil uses this circuit and requires
 a registry entry marked with verified MACI tally status before rewards can be
 finalized.
 
-The public input vector has 31 values:
+The private `nonces[i]` values are intended to be MACI `VoteCommand.salt`
+values in the full MACI experiment.
+
+The public input vector has 30 values:
 
 ```text
 payouts[0..7]
@@ -86,6 +89,5 @@ kappa[25]
 scale[26]
 disputeId[27]
 finalStateRoot[28]
-rewardRandomness[29]
-rhoTau[30]
+rhoTau[29]
 ```

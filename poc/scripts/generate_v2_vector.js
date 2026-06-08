@@ -48,7 +48,6 @@ function v2Inputs() {
     voterIds: Array.from({ length: 8 }, (_, i) => fieldElement(`zk-peer-v2 voter ${i}`)),
     recipients: recipientAddresses().map((address) => BigInt(address)),
     disputeId: 78n,
-    randomness: fieldElement("zk-peer-v2 reward randomness fixture 0"),
     smoothing: 1n,
     kappa: 100n,
     scale: 1_000n,
@@ -108,7 +107,6 @@ async function main() {
     scale: inputs.scale,
     disputeId: inputs.disputeId,
     finalStateRoot: finalState.finalStateRoot,
-    randomness: inputs.randomness,
     rhoTau: inputs.rhoTau,
   };
 

@@ -99,10 +99,6 @@ function baseInputs(sidecar, attempt) {
     voterIds: toBigIntArray(sidecar.voterIds, "voterIds"),
     recipients: toRecipientArray(sidecar.recipients),
     disputeId: BigInt(sidecar.disputeId ?? sidecar.pollId),
-    randomness: BigInt(
-      sidecar.randomness ??
-        fieldElement(`${sidecar.randomnessLabel || sidecar.nonceLabel || "full-maci-reward-sidecar"} reward randomness`),
-    ),
     smoothing: BigInt(sidecar.smoothing ?? 1),
     kappa: BigInt(sidecar.kappa ?? 100),
     scale: BigInt(sidecar.scale ?? 1_000),
@@ -122,7 +118,7 @@ async function buildVector(sidecar, attempt) {
 
   const vector = {
     version: "full-maci-sidecar-v2",
-    description: "Lottery reward vector derived from official MACI final poll reports with recipient and randomness binding.",
+    description: "Lottery reward vector derived from official MACI final poll reports with recipient and command-salt nonce binding.",
     inputs: lotteryInputs,
     nonceCommitments: finalState.nonceCommitments.map((commitment) => commitment.toString()),
     leaves: finalState.leaves.map((leaf) => leaf.toString()),
@@ -159,7 +155,6 @@ async function buildVector(sidecar, attempt) {
     scale: inputs.scale,
     disputeId: inputs.disputeId,
     finalStateRoot: finalState.finalStateRoot,
-    randomness: inputs.randomness,
     rhoTau: inputs.rhoTau,
   };
 
@@ -236,7 +231,6 @@ async function main() {
     totalPayout: totalPayout.toString(),
     disputeId: publicSignals[27],
     finalStateRoot: publicSignals[28],
-    rewardRandomness: publicSignals[29],
     proofGenerationMs,
   };
   writeJson(fixtureFile, fixture);
@@ -244,7 +238,7 @@ async function main() {
   const summary = {
     pollId: inputs.disputeId.toString(),
     finalRewardStateRoot: vector.finalStateRoot,
-    rewardRandomness: inputs.randomness.toString(),
+    nonceSource: sidecar.nonceSource || "maci-vote-command-salt",
     reports: inputs.reports,
     maciStateIndices: inputs.maciStateIndices.map((value) => value.toString()),
     tallyPayouts: amounts,

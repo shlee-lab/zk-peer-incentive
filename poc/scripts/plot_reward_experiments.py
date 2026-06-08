@@ -185,9 +185,9 @@ def plot_lottery_unbiasedness():
     ]
     line_chart(
         "Lottery payout convergence",
-        "Repeated public randomness samples converge toward the expected peer-prediction reward.",
+        "Repeated user command-salt samples converge toward the expected peer-prediction reward.",
         series,
-        "sampled randomness trials",
+        "sampled command-salt trials",
         "mean total payout / 1e6",
         y_scale=1_000_000.0,
         stem="lottery_unbiasedness",

@@ -1,7 +1,7 @@
 metric,value
 voters,8
 merkle_depth,3
-public_inputs,31
+public_inputs,30
 private_inputs,80
-constraints,23881
+constraints,23875
 lottery_bits,32

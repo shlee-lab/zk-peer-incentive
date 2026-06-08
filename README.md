@@ -54,11 +54,10 @@ The system currently supports:
   - computes inverse-frequency peer-agreement rewards;
   - converts expected rewards into lottery payouts;
   - exposes public payout values, recipient addresses, poll/dispute id, reward
-    state root, and reward randomness;
+    state root, and reward parameters;
 - Solidity reward flow:
   - verifies the generated Groth16 proof on-chain;
   - checks the proof root matches the registered reward state root;
-  - checks the proof randomness matches the registered reward randomness;
   - checks payout recipient addresses match proof public signals;
   - records claimable rewards;
   - allows winners to claim.
@@ -139,20 +138,21 @@ The PoC uses:
 - public stakes;
 - ring peer matching: `peer(i) = i + 1 mod N`;
 - smoothed leave-one-out inverse-frequency peer agreement;
-- high-entropy private nonces;
-- registered public reward randomness;
+- high-entropy private nonces sourced from MACI `VoteCommand.salt` values;
 - a lottery draw from `Poseidon(seed, i)`.
 
 The lottery seed is:
 
 ```text
-seed = Poseidon(nonce_0, ..., nonce_7, pollId, finalRewardStateRoot, rewardRandomness)
+seed = Poseidon(commandSalt_0, ..., commandSalt_7, pollId, finalRewardStateRoot)
 ```
 
-For production, `rewardRandomness` should come from a source the coordinator
-cannot choose after seeing reports, such as a VRF/randomness beacon or a
-commit-reveal protocol. The local PoC uses deterministic test randomness for
-reproducibility.
+In the full MACI experiment, each `commandSalt_i` is the salt inside the user's
+encrypted and signed MACI vote command. It is not public, but the MACI proof
+processes the command that contains it. The reward proof later opens the same
+values privately as lottery entropy. This is a B-lite integration that avoids
+rewriting MACI circuits while still moving the reward nonce into the encrypted
+MACI vote payload.
 
 Each participant either receives:
 
@@ -231,8 +231,8 @@ MACI_REPO=/tmp/maci-official npm run e2e:full-maci-reward
 
 ## Evaluation Results
 
-Latest full MACI + reward Anvil run after recipient binding, public randomness
-binding, and range-check additions:
+Latest full MACI + reward Anvil run after recipient binding, MACI command-salt
+nonce sourcing, and range-check additions:
 
 ```text
 execution chain id: 31337
@@ -241,36 +241,35 @@ MACI tally option 1: 36
 total spent voice credits: 648
 derived reports: [1, 0, 1, 1, 0, 0, 1, 0]
 finalRewardStateRoot:
-  7169802589688111173330386380848112532285602135796422622859552470452160090463
-rewardRandomness:
-  14526973487272673442968073038832824276367766208387535527132383916993394146268
+  5918709685620845749538721862743514405600246650950154740349407238551684212180
+reward nonce source: MACI VoteCommand.salt
 reward winner indices: [2, 4]
-MACI proof phase: 109063 ms
-reward proof phase: 3339 ms
+MACI proof phase: 112450 ms
+reward proof phase: 919 ms
 ```
 
 Reward-related gas from the Anvil run:
 
 ```text
-registerFinalState  116,309 gas
+registerFinalState   93,334 gas
 fundDispute          47,396 gas
-finalizeRewards     554,847 gas
-claim                30,684 gas
+finalizeRewards     545,197 gas
+claim                30,706 gas
 ```
 
 Reward contract deployment gas:
 
 ```text
-RewardGroth16Verifier   957,380 gas
+RewardGroth16Verifier   937,075 gas
 RewardVerifierAdapter   328,329 gas
-FinalStateRegistry      517,322 gas
-IntegratedRewardPool  1,226,980 gas
+FinalStateRegistry      365,305 gas
+IntegratedRewardPool  1,193,529 gas
 ```
 
 Foundry tests:
 
 ```text
-14 tests passed
+13 tests passed
 ```
 
 The tests cover:
@@ -281,7 +280,6 @@ The tests cover:
 - tampered payout rejected;
 - tampered proof rejected;
 - unverified MACI tally status rejected;
-- wrong registered reward randomness rejected;
 - recipient address substitution rejected;
 - double finalization rejected;
 - winner claim succeeds;
@@ -290,8 +288,8 @@ The tests cover:
 Circuit size:
 
 ```text
-23,881 non-linear constraints
-31 public inputs
+23,875 non-linear constraints
+30 public inputs
 80 private inputs
 ```
 
@@ -405,14 +403,13 @@ and not a claim that MACI's core protocol was improved.
 - Uses a fixed `N = 8`.
 - Uses binary reports only.
 - Uses a local development Groth16 setup.
-- Reward sidecar nonce commitments and public randomness binding are
+- Reward sidecar nonce commitments and MACI command-salt extraction are
   experimental.
 - Recipient addresses are bound to the reward proof and sidecar leaves, but the
   off-chain mapping from MACI state index to payout address is still
   experimental.
-- Lottery fairness depends on obtaining `rewardRandomness` after the final
-  reward state is fixed; production needs VRF, a randomness beacon, or
-  commit-reveal.
+- Lottery fairness depends on users generating unpredictable MACI command salts
+  and on the adapter using the processed encrypted commands consistently.
 - Sybil resistance depends on external registration or staking policy.
 - The reward proof verifies payout correctness, not actual human effort.
 - Coordinator privacy and MACI security assumptions remain MACI's responsibility.

@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-06-07T16:59:26.672Z",
+  "generatedAt": "2026-06-08T02:02:10.752Z",
   "voters": 8,
   "lotteryBits": 32,
   "sweepRows": 192,
@@ -99,7 +99,7 @@
     }
   ],
   "notes": [
-    "Lottery trials intentionally sample many public randomness values to evaluate distribution, not to select a production seed.",
+    "Lottery trials sample many deterministic user command-salt vectors to evaluate distribution, not to select a production seed.",
     "Circuit and contract remain fixed at N=8 for this PoC."
   ]
 }

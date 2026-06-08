@@ -140,7 +140,6 @@ async function startAnvil() {
 function generatedTestSource() {
   return `import { getSigners } from "@maci-protocol/contracts";
 import { EMode, VOTE_OPTION_TREE_ARITY } from "@maci-protocol/core";
-import { generateRandomSalt } from "@maci-protocol/crypto";
 import { Keypair } from "@maci-protocol/domainobjs";
 import {
   DEFAULT_IVCP_DATA,
@@ -201,8 +200,13 @@ import path from "path";
 const PROJECT_ROOT = ${JSON.stringify(projectRoot)};
 const POC_ROOT = path.join(PROJECT_ROOT, "poc");
 const OUTPUT_ROOT = process.env.FULL_MACI_REWARD_OUTPUT_ROOT || path.join(POC_ROOT, "artifacts/full_maci_reward");
+const FIELD_PRIME = 21888242871839275222246405745257275088548364400416034343698204186575808495617n;
 const REPORTS = [1, 0, 1, 1, 0, 0, 1, 0];
 const STAKES = ["10", "20", "10", "15", "5", "10", "15", "15"];
+
+function deterministicCommandSalt(index: number): bigint {
+  return BigInt(ethers.id(\`zk-peer-full-maci-command-salt-\${index}\`)) % FIELD_PRIME;
+}
 
 function readJson(file: string): any {
   return JSON.parse(fs.readFileSync(file, "utf8"));
@@ -331,6 +335,7 @@ describe("full MACI plus reward sidecar E2E", function test() {
     const signers = await getSigners();
     const [signer, ...userSigners] = signers;
     const users = Array.from({ length: 8 }, () => new Keypair());
+    const commandSalts: bigint[] = [];
     const network = await signer.provider!.getNetwork();
     console.log(\`executionNetworkChainId=\${network.chainId.toString()}\`);
     console.log(\`rewardOutputRoot=\${OUTPUT_ROOT}\`);
@@ -382,6 +387,8 @@ describe("full MACI plus reward sidecar E2E", function test() {
     }
 
     for (let i = 0; i < users.length; i += 1) {
+      const commandSalt = deterministicCommandSalt(i);
+      commandSalts.push(commandSalt);
       await publish({
         maciAddress: maciAddresses.maciContractAddress,
         publicKey: users[i].publicKey.serialize(),
@@ -390,7 +397,7 @@ describe("full MACI plus reward sidecar E2E", function test() {
         nonce: 1n,
         pollId: 0n,
         newVoteWeight: 9n,
-        salt: generateRandomSalt(),
+        salt: commandSalt,
         privateKey: users[i].privateKey.serialize(),
         signer,
       });
@@ -437,13 +444,14 @@ describe("full MACI plus reward sidecar E2E", function test() {
       voterIds: REPORTS.map((_, i) => poll.pollStateLeaves[i + 1].hash().toString()),
       stakes: STAKES,
       recipients,
+      nonces: commandSalts.map((value) => value.toString()),
+      nonceSource: "maci-vote-command-salt",
       smoothing: "1",
       kappa: "100",
       scale: "1000",
-      rhoTau: "3000000",
+      rhoTau: "2500000",
       lotteryBits: 32,
       nonceLabel: "full-maci-reward-sidecar",
-      randomnessLabel: "full-maci-reward-sidecar",
     };
     const sidecarFile = path.join(OUTPUT_ROOT, "sidecar_input.json");
     const rewardOutDir = path.join(OUTPUT_ROOT, "reward");
@@ -454,7 +462,6 @@ describe("full MACI plus reward sidecar E2E", function test() {
 
     const disputeId = BigInt(fixture.disputeId);
     const finalRewardStateRoot = BigInt(fixture.finalStateRoot);
-    const rewardRandomness = BigInt(fixture.rewardRandomness);
     const totalPayout = BigInt(fixture.totalPayout);
     expect(totalPayout).to.be.greaterThan(0n);
 
@@ -486,12 +493,7 @@ describe("full MACI plus reward sidecar E2E", function test() {
 
     await waitTx(
       "reward.registerFinalState",
-      await registry.registerFinalStateWithRandomness(
-        disputeId,
-        finalRewardStateRoot,
-        BigInt(tallyData.results.tally[1]),
-        rewardRandomness,
-      ),
+      await registry.registerFinalState(disputeId, finalRewardStateRoot, BigInt(tallyData.results.tally[1])),
     );
     await waitTx("reward.fundDispute", await pool.fundDispute(disputeId, { value: totalPayout }));
     await waitTx(
@@ -517,7 +519,7 @@ describe("full MACI plus reward sidecar E2E", function test() {
     console.log(\`maciTally0=\${tallyData.results.tally[0]} maciTally1=\${tallyData.results.tally[1]}\`);
     console.log(\`reports=\${extractedReports.join(",")}\`);
     console.log(\`finalRewardStateRoot=\${fixture.finalStateRoot}\`);
-    console.log(\`rewardRandomness=\${fixture.rewardRandomness}\`);
+    console.log(\`rewardNonceSource=maci-vote-command-salt\`);
     console.log(\`rewardPool=\${poolAddress}\`);
     console.log(\`winnerIndex=\${winnerIndex}\`);
     console.log(\`claimant=\${claimant}\`);
