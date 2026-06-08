@@ -11,7 +11,7 @@ const N = 8;
 const REPO_ROOT = path.resolve(__dirname, "../..");
 const OUT_DIR = path.join(REPO_ROOT, "experiments/reward-evaluation");
 const DATA_DIR = path.join(OUT_DIR, "data");
-const DEFAULT_STAKES = [10n, 20n, 10n, 15n, 5n, 10n, 15n, 15n];
+const DEFAULT_STAKES = Array.from({ length: N }, () => 10n);
 const DEFAULT_BUDGET = 3_000_000n;
 
 function csvEscape(value) {
@@ -125,6 +125,9 @@ function runBudgetAllocation(profile) {
   return allocation.payouts.map((payout, index) => ({
     voterIndex: index,
     report: profile.reports[index],
+    peerIndex: inputs.peerIndices[index],
+    peerReport: profile.reports[inputs.peerIndices[index]],
+    peerMatch: profile.reports[index] === profile.reports[inputs.peerIndices[index]] ? 1 : 0,
     stake: profile.stakes[index].toString(),
     expectedScore: allocation.rewardWitness[index].scaled.toString(),
     allocationScore: allocation.allocationScores[index].toString(),
@@ -246,6 +249,7 @@ async function main() {
     rewardBudget: DEFAULT_BUDGET.toString(),
     allocationMode: "fixed_total_budget",
     allocationBaseline: "scale",
+    stakeDesign: "uniform stakes for report-pattern experiments; stake effects are isolated in stake_concentration.csv",
     sweepRows: sweepRows.length,
     allocationRows: allocationRows.length,
     profiles: profiles.map((profile) => ({

@@ -1,176 +1,164 @@
 # ZK Peer-Prediction Reward PoC
 
-This repository contains a research prototype that connects official MACI with
-a ZK-verifiable peer-prediction reward layer.
+This repository is a research prototype for adding a ZK-verifiable
+peer-prediction reward layer to private MACI voting.
 
-In plain terms:
+MACI is used for what it already does well: voters submit encrypted votes, the
+system processes those messages privately, and a tally proof verifies the final
+result without exposing each voter's vote. This PoC adds a separate reward
+sidecar. The sidecar takes the final hidden voting state, commits the
+reward-relevant data into a root, proves that a fixed-budget peer-prediction
+payout vector was computed correctly, and lets recipients claim the finalized
+rewards on-chain.
 
 ```text
-private MACI votes
-  -> verified MACI tally
-  -> hidden binary reports derived from final MACI ballots
-  -> ZK-verified fixed-budget peer-prediction rewards
+encrypted MACI votes
+  -> MACI message-processing proof
+  -> MACI tally proof
+  -> hidden binary reports from final MACI ballots
+  -> reward state root
+  -> reward proof
   -> on-chain reward finalization
   -> recipient claim
 ```
 
-The implementation currently lives under `poc/`. The focus is feasibility:
-showing that private MACI outputs can feed a reward proof and an on-chain reward
-claim flow.
+The implementation lives under `poc/`. The goal is feasibility for research,
+not production security.
 
-## Purpose
+## Core Idea
 
-MACI proves that encrypted votes were processed and tallied correctly without
-revealing each voter's individual vote.
+The prototype keeps official MACI unmodified. MACI handles signup, poll join,
+encrypted vote publication, message processing, tally proving, and on-chain
+tally verification. After MACI finishes, the reward sidecar derives binary
+reports from the final MACI ballots and builds a reward state root.
 
-This PoC asks a follow-up question:
-
-> Can a reward mechanism be attached to that private final voting state, so that
-> rewards are verifiably correct without revealing the hidden reports?
-
-The current answer demonstrated by this repository is:
-
-> Yes, as an experimental reward sidecar. Unmodified official MACI handles
-> voting and tallying; a separate reward proof proves that the payout vector was
-> computed correctly from reports bound to a MACI-derived reward state root.
-
-## What It Does
-
-The system currently supports:
-
-- real official MACI local flow:
-  - voter signup;
-  - poll join;
-  - encrypted vote publication;
-  - MACI message-processing proof generation and on-chain submission;
-  - MACI tally proof generation and on-chain verification;
-- reward sidecar state:
-  - derives binary reports from final MACI ballots;
-  - binds reports to `maciStateIndex`, voter identity value, nonce commitment,
-    public stake, and recipient address;
-  - commits those leaves into a Merkle root;
-- reward proof:
-  - proves hidden reports and nonces are bound to the reward sidecar root;
-  - computes inverse-frequency peer-agreement rewards;
-  - normalizes those scores into a fixed total reward budget;
-  - exposes public payout values, recipient addresses, poll/dispute id, reward
-    state root, and reward parameters;
-- Solidity reward flow:
-  - verifies the generated Groth16 proof on-chain;
-  - checks the proof root matches the registered reward state root;
-  - checks payout recipient addresses match proof public signals;
-  - records claimable rewards;
-  - allows paid recipients to claim.
-
-## System Components
-
-### Official MACI
-
-The MACI side uses the official repository:
-
-- repo: `https://github.com/privacy-scaling-explorations/maci`
-- pinned commit: `22106c8a2015f18709a32208ad2ad40b6f3fa8a5`
-- package version at that commit: `maci@3.0.0`
-
-MACI is not vendored into this repository. The integration script expects an
-external checkout, usually at `/tmp/maci-official`.
-
-MACI provides:
-
-- encrypted voting;
-- message processing proof;
-- tally proof;
-- on-chain tally verification;
-- final off-chain poll state from which the reward sidecar derives reports.
-
-### Reward Sidecar
-
-The reward sidecar is the new part in this repository.
-
-For each voter, the sidecar leaf is:
+Each reward leaf binds the hidden report to the MACI state index, a voter
+identity value, a nonce commitment, a public stake, and the recipient address:
 
 ```text
 nonceCommitment_i = Poseidon(nonce_i, 0)
 leaf_i = Poseidon(maciStateIndex_i, voterId_i, report_i, nonceCommitment_i, stake_i, recipient_i)
 ```
 
-The Merkle root of these leaves is the public reward state root.
+The reward proof then shows that the prover knows hidden reports and nonce
+openings included in that root, and that the public payout vector follows the
+reward rule. The Solidity reward pool checks the proof, checks that the root is
+the registered final reward state, records claimable balances, and lets each
+recipient withdraw their assigned payout.
 
-The reward proof attests:
+The claim supported by the PoC is intentionally narrow:
 
-```text
-The prover knows hidden reports and nonces such that:
-1. each report is binary;
-2. each nonce opens to its nonce commitment;
-3. all leaves are included in the public reward state root;
-4. each public recipient address is bound to the same leaf as the hidden report;
-5. the public payout vector follows the fixed-budget peer-prediction rule.
-```
-
-### Reward Contracts
-
-Important contracts:
-
-- `poc/contracts/RewardGroth16Verifier.sol`: generated snarkjs verifier for the
-  reward circuit.
-- `poc/contracts/RewardVerifierAdapter.sol`: adapts `bytes` proof input to the
-  generated verifier ABI.
-- `poc/contracts/FinalStateRegistry.sol`: stores `poll/dispute id`, reward state
-  root, tally placeholder, and MACI tally verification status.
-- `poc/contracts/IntegratedRewardPool.sol`: verifies reward proof, finalizes
-  payout amounts, and lets recipients claim.
-
-The reward payout flow is pull-based:
-
-```text
-finalizeRewards() -> records claimable balances
-claim()           -> each paid recipient withdraws their own balance
-```
-
-This avoids sending ETH to every recipient during finalization.
+> A reward layer can be bound to a MACI-derived hidden report state, and a real
+> Groth16 proof can verify fixed-budget peer-prediction payouts before an
+> on-chain claim flow pays recipients.
 
 ## Reward Rule
 
-The PoC uses:
-
-- binary reports: `0` or `1`;
-- fixed `N = 8`;
-- public stakes;
-- ring peer matching: `peer(i) = i + 1 mod N`;
-- smoothed leave-one-out inverse-frequency peer agreement;
-- private command-salt values sourced from MACI `VoteCommand.salt` values;
-- a fixed reward budget `B` distributed across participants by normalized
-  peer-prediction scores.
-
-For each voter, the circuit computes an unnormalized peer-prediction score
-`T_i`. The allocation score is:
+The current reward rule is fixed-size and intentionally simple: `N = 8`, binary
+reports, public stakes, ring peer matching, and smoothed inverse-frequency peer
+agreement. The mechanism first computes an unnormalized peer-prediction score
+`T_i` for each voter. It then adds a baseline and normalizes all scores into a
+fixed reward budget `B`:
 
 ```text
 score_i = T_i + scale
-```
-
-The `+ scale` baseline keeps the denominator nonzero and gives an equal
-fallback when every peer-agreement score is zero. Payouts are then normalized to
-the fixed reward budget:
-
-```text
 payout_i ~= B * score_i / sum_j score_j
 sum_i payout_i = B
 ```
 
-The first `N-1` payouts use integer floor division; the final payout receives
-the deterministic rounding residue so the total exactly equals `B`.
+The final payout receives the deterministic rounding residue, so the payout
+vector always sums exactly to the configured budget. Reports only change how
+that fixed pool is divided.
 
-In the full MACI experiment, each `commandSalt_i` is the salt inside the user's
-encrypted and signed MACI vote command. The reward proof opens those salts
-privately to bind the reward computation to the same sidecar state. Official
-MACI remains unchanged.
+Here, `kappa` is the reward scale. Increasing `kappa` makes peer-agreement
+scores larger before the fixed-budget normalization step. It does not create a
+larger reward pool; it changes how strongly the nonzero peer-prediction scores
+dominate the small baseline.
 
-## How To Run
+## Current Result
 
-### Reward-Only Anvil Flow
+The latest full local run uses official MACI at commit
+`22106c8a2015f18709a32208ad2ad40b6f3fa8a5`, an Anvil chain with chain id
+`31337`, eight voters, and a reward budget of `3,000,000`.
 
-This checks the generated reward proof and reward contracts on Anvil.
+```text
+MACI tally: option0 = 36, option1 = 36
+reports: [1, 0, 1, 1, 0, 0, 1, 0]
+payouts: [644, 644, 1498065, 644, 1498065, 644, 644, 650]
+MACI proof phase: 97995 ms
+reward proof phase: 3034 ms
+reward circuit: 17,262 constraints, 30 public inputs, 88 private inputs
+Foundry tests: 13 passed
+```
+
+Reward-specific gas from the same run was:
+
+```text
+registerFinalState   93,334 gas
+fundDispute          47,396 gas
+finalizeRewards     664,956 gas
+claim                30,706 gas
+```
+
+`finalizeRewards` is the expensive reward-layer operation because it verifies
+the Groth16 proof and records the payout vector. `claim` is cheap because it
+only withdraws a balance that was already finalized.
+
+## Evaluation
+
+The evaluation artifacts are under `experiments/reward-evaluation/`. They are
+meant to support the basic research questions: whether the full MACI plus reward
+flow runs end to end, whether the fixed-budget reward rule behaves sensibly
+under representative report profiles, how stake weighting affects payout share,
+and what the reward-only on-chain cost looks like.
+
+Reward-rule behavior:
+
+This graph is about the raw reward score, not the final payout. The x-axis
+`kappa` is the reward multiplier. Larger `kappa` means matching peer reports get
+stronger scores. The flat alternating line means that, under the current
+ring-peer rule, nobody agrees with their assigned peer, so the raw score stays
+near zero. Stake is fixed across these report profiles, so this chart isolates
+the effect of the report pattern.
+
+![Reward-rule behavior](experiments/reward-evaluation/figures/reward_sensitivity.png)
+
+Fixed-budget allocation:
+
+This graph shows how the fixed `3,000,000` budget is divided in the MACI-derived
+example. The y-axis is logarithmic so both the large peer-match payouts and the
+small baseline payouts remain visible. Voter 2 and voter 4 receive most of the
+budget because they are the only voters whose report matches their assigned
+peer's report. Since all stakes are fixed to the same value in this chart, those
+two voters receive the same large payout.
+
+![Budget allocation](experiments/reward-evaluation/figures/budget_allocation.png)
+
+Stake weighting:
+
+This graph is the only one that changes stake. It changes voter 2's public stake
+while keeping the report pattern fixed. It checks that, when a voter has a valid
+peer-agreement signal, increasing that voter's stake increases their share of
+the fixed reward budget.
+
+![Stake-weighting behavior](experiments/reward-evaluation/figures/stake_concentration.png)
+
+Reward gas:
+
+This graph separates the reward-layer on-chain costs. `Verify + finalize` is
+the largest bar because it verifies the reward proof and records the payout
+vector. `Claim` is much smaller because it only withdraws an already-finalized
+balance.
+
+![Reward on-chain cost](experiments/reward-evaluation/figures/cost_profile.png)
+
+The same figures are also exported as vector PDFs for paper or slide use. More
+detail is in [experiments/reward-evaluation/README.md](experiments/reward-evaluation/README.md).
+
+## Running The Prototype
+
+The reward-only Anvil flow checks the generated reward proof and reward
+contracts without running full MACI:
 
 ```bash
 cd poc
@@ -179,125 +167,22 @@ forge test -vvv
 npm run e2e:anvil
 ```
 
-The script starts Anvil automatically if `RPC_URL` is not set.
-
-### Full MACI + Reward On Anvil
-
-This runs official MACI and the reward layer on an Anvil JSON-RPC chain.
-
-Prerequisites:
-
-- official MACI repo prepared at `/tmp/maci-official`;
-- Node `v20.20.2` available through `nvm`;
-- MACI test zkeys downloaded;
-- rapidsnark installed as described in `poc/maci_baseline.md`;
-- Foundry tools `forge`, `anvil`, and `cast` available;
-- reward circuit artifacts already generated under `poc/artifacts/v2/`.
-
-Command:
+The full MACI plus reward flow expects an official MACI checkout at
+`/tmp/maci-official`, Node `v20.20.2`, MACI test zkeys, rapidsnark, Foundry, and
+the reward circuit artifacts under `poc/artifacts/v2/`. The exact setup is
+documented in [poc/maci_baseline.md](poc/maci_baseline.md).
 
 ```bash
 cd poc
 MACI_REPO=/tmp/maci-official npm run e2e:full-maci-reward:anvil
 ```
 
-What it does:
+That command starts Anvil, deploys official MACI, signs up and joins eight
+voters, publishes encrypted votes, generates and submits MACI proofs, derives
+the reward sidecar state, generates the reward proof, finalizes payouts, and
+claims one payout.
 
-- starts Anvil on `http://127.0.0.1:8556`;
-- temporarily points the official MACI testing config at that Anvil RPC;
-- deploys official MACI contracts;
-- signs up and joins 8 voters;
-- publishes 8 encrypted votes;
-- generates and submits MACI proofs;
-- verifies MACI tally;
-- derives reward sidecar state;
-- generates reward proof;
-- deploys reward contracts;
-- finalizes rewards;
-- claims one finalized payout;
-- restores the official MACI testing config afterward.
-
-### Full MACI + Reward On MACI Hardhat Harness
-
-The same integration can run on the official MACI in-process Hardhat chain:
-
-```bash
-cd poc
-MACI_REPO=/tmp/maci-official npm run e2e:full-maci-reward
-```
-
-## Evaluation Results
-
-Latest full MACI + reward Anvil run after recipient binding, MACI command-salt
-nonce sourcing, range-check additions, and fixed-budget normalization:
-
-```text
-execution chain id: 31337
-MACI tally option 0: 36
-MACI tally option 1: 36
-total spent voice credits: 648
-derived reports: [1, 0, 1, 1, 0, 0, 1, 0]
-finalRewardStateRoot:
-  2806112153934848168283060427080784787707005028340321964253024084722514258563
-reward nonce source: MACI VoteCommand.salt
-reward budget: 3,000,000
-fixed-budget payouts: [907, 907, 2036962, 907, 957593, 907, 907, 910]
-sample claim index: 0
-MACI proof phase: 120043 ms
-reward proof phase: 4270 ms
-```
-
-Reward-related gas from the Anvil run:
-
-```text
-registerFinalState   93,334 gas
-fundDispute          47,396 gas
-finalizeRewards     664,932 gas
-claim                30,706 gas
-```
-
-Reward contract deployment gas:
-
-```text
-RewardGroth16Verifier   936,895 gas
-RewardVerifierAdapter   328,329 gas
-FinalStateRegistry      365,305 gas
-IntegratedRewardPool  1,214,495 gas
-```
-
-Foundry tests:
-
-```text
-13 tests passed
-```
-
-The tests cover:
-
-- valid generated reward proof accepted on-chain;
-- wrong reward state root rejected;
-- wrong poll/dispute id rejected;
-- tampered payout rejected;
-- tampered proof rejected;
-- unverified MACI tally status rejected;
-- recipient address substitution rejected;
-- double finalization rejected;
-- recipient claim succeeds;
-- double claim fails through cleared claimable balance.
-
-Circuit size:
-
-```text
-17,262 non-linear constraints
-30 public inputs
-88 private inputs
-```
-
-## Experimental Figures
-
-Reproducible evaluation data and figures live under
-`experiments/reward-evaluation/`.
-
-Generate them with:
+To regenerate the evaluation data and figures:
 
 ```bash
 cd poc
@@ -307,135 +192,18 @@ pip install -r requirements.txt
 npm run experiments:reward
 ```
 
-The evaluation is organized around the main claims of the prototype:
+## Scope
 
-| Claim being checked | Experiment | Evidence |
-| --- | --- | --- |
-| Does official MACI plus the reward layer run end to end? | Full MACI + reward Anvil run | `full_maci_reward_anvil_latest.json`, proof time, gas data |
-| Does the single peer-prediction reward rule behave as intended? | Reward-rule behavior sweep | Same rule under MACI-derived, one-sided, consensus, and alternating report profiles |
-| Does the reward layer preserve a fixed total budget? | Budget allocation | Per-voter payouts sum exactly to the configured reward budget |
-| Do public stakes affect reward allocation as intended? | Stake concentration sweep | Dominant-stake payout and non-dominant average payout under fixed total budget |
-| What is the reward-layer on-chain cost? | Gas breakdown | Root registration, funding, proof verification plus finalization, and claim gas |
+This is a local research prototype with fixed `N = 8`, binary reports, a local
+development Groth16 setup, and an experimental reward sidecar around official
+MACI. It does not include a production audit, Sybil-resistance policy,
+token-economics design, large-scale benchmarking, or proof of real-world human
+effort.
 
-More detail is in
+MACI remains responsible for private voting and tally correctness. The new
+reward proof is responsible only for payout correctness from committed hidden
+reports.
+
+For deeper technical details, see [poc/zk_relation.md](poc/zk_relation.md),
+[poc/maci_baseline.md](poc/maci_baseline.md), and
 [experiments/reward-evaluation/README.md](experiments/reward-evaluation/README.md).
-
-The data files are CSV/JSON:
-
-- `experiments/reward-evaluation/data/parameter_sweep.csv`
-- `experiments/reward-evaluation/data/reward_sensitivity.csv`
-- `experiments/reward-evaluation/data/budget_allocation.csv`
-- `experiments/reward-evaluation/data/stake_concentration.csv`
-- `experiments/reward-evaluation/data/gas_breakdown.csv`
-- `experiments/reward-evaluation/data/reward_only_gas_breakdown.csv`
-- `experiments/reward-evaluation/data/anvil_reward_e2e_latest.json`
-- `experiments/reward-evaluation/data/full_maci_reward_anvil_latest.json`
-
-The same plots are exported as PNG previews for README and PDF files for paper
-or slide use. The PDFs are vector figures with embedded fonts.
-
-Reward-rule behavior: the same peer-prediction rule is evaluated under several
-representative report profiles while the incentive scale changes. This is a
-calibration and implementation-check plot: it shows whether the implemented
-rule responds to agreement patterns and scale choices in the direction expected
-by the mechanism design.
-
-![Reward-rule behavior](experiments/reward-evaluation/figures/reward_sensitivity.png)
-
-PDF: [reward_sensitivity.pdf](experiments/reward-evaluation/figures/reward_sensitivity.pdf)
-
-Budget allocation: the MACI-derived report profile is normalized into a fixed
-reward budget. The plotted payouts sum exactly to the configured budget.
-
-![Budget allocation](experiments/reward-evaluation/figures/budget_allocation.png)
-
-PDF: [budget_allocation.pdf](experiments/reward-evaluation/figures/budget_allocation.pdf)
-
-Stake-weighting behavior: increasing one voter's public stake scales that
-voter's fixed-budget payout and shows how stake-weighted incentives enter the
-rule.
-
-![Stake-weighting behavior](experiments/reward-evaluation/figures/stake_concentration.png)
-
-PDF: [stake_concentration.pdf](experiments/reward-evaluation/figures/stake_concentration.pdf)
-
-Reward on-chain cost: reward-layer gas only, separated into state registration,
-funding, proof verification plus finalization, and recipient claim.
-
-![Reward on-chain cost](experiments/reward-evaluation/figures/cost_profile.png)
-
-PDF: [cost_profile.pdf](experiments/reward-evaluation/figures/cost_profile.pdf)
-
-## Generated Artifacts
-
-Committed deterministic vectors:
-
-- `poc/vectors/v2/reward_fixed_budget_state.json`
-- `poc/vectors/v2/reward_proof_fixture.json`
-
-Ignored reproducible artifacts:
-
-- `poc/artifacts/v2/input.json`
-- `poc/artifacts/v2/reward_check.r1cs`
-- `poc/artifacts/v2/reward_check_js/reward_check.wasm`
-- `poc/artifacts/v2/witness.wtns`
-- `poc/artifacts/v2/proof.json`
-- `poc/artifacts/v2/public.json`
-- `poc/artifacts/v2/verification_key.json`
-- `poc/artifacts/v2/reward_check_final.zkey`
-- `poc/artifacts/full_maci_reward_anvil/`
-
-The ignored artifacts are large or environment-specific and can be regenerated.
-
-## Repository Map
-
-```text
-poc/reference/reward_model.js
-  JavaScript reference model for reward computation, fixed-budget payouts, and
-  Merkle sidecar state.
-
-poc/circuits/reward_check.circom
-  Circom reward relation proving payout correctness and reward state inclusion.
-
-poc/contracts/
-  Solidity verifier adapter, reward pool, and final-state registry.
-
-poc/scripts/build_sidecar_reward_artifacts.js
-  Builds reward proof artifacts from MACI-derived sidecar inputs.
-
-poc/scripts/run_full_maci_reward_e2e.js
-  Runs official MACI plus reward integration on Hardhat or Anvil.
-
-experiments/reward-evaluation/
-  Parameter sweep data, Anvil gas data, and generated PNG/PDF figures.
-
-poc/maci_baseline.md
-  Exact official MACI setup, pinned versions, commands, and Anvil details.
-
-poc/zk_relation.md
-  More formal description of the reward ZK relation.
-```
-
-## Supported Claim
-
-A successful run supports this claim:
-
-> A MACI final voting state can be used as the source for hidden binary reports;
-> a reward sidecar can bind those reports to a public root; and a Groth16 proof
-> can verify fixed-budget peer-prediction payouts from that hidden state before a
-> Solidity contract finalizes claimable rewards.
-
-This is a reward-layer extension around MACI. MACI remains responsible for
-private voting and tally correctness; the new proof handles reward correctness
-from the committed hidden report state.
-
-## Current Scope
-
-- Fixed-size `N = 8`, binary-report prototype with a local development Groth16
-  setup.
-- Official MACI is used unchanged; the reward sidecar and command-salt nonce
-  bridge are experimental integration choices.
-- Registration policy, Sybil resistance, token design, scaling, and production
-  audit are outside this prototype.
-- The proof verifies payout correctness from committed hidden reports; it does
-  not cryptographically prove real-world effort.

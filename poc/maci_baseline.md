@@ -169,16 +169,17 @@ Latest observed Anvil run:
 - Total spent voice credits: `648`.
 - Derived reports: `[1, 0, 1, 1, 0, 0, 1, 0]`.
 - Final reward sidecar root:
-  `2806112153934848168283060427080784787707005028340321964253024084722514258563`.
+  `6468364380890747372936892381836443558652490888163692339671766082874531690666`.
 - Reward nonce source: `MACI VoteCommand.salt`.
 - Reward budget: `3000000`.
-- Fixed-budget payouts: `[907, 907, 2036962, 907, 957593, 907, 907, 910]`.
+- Stake design: uniform public stake `10` for all eight voters.
+- Fixed-budget payouts: `[644, 644, 1498065, 644, 1498065, 644, 644, 650]`.
 - Sample claim index: `0`.
-- MACI proof phase: `120043 ms`.
-- Reward proof phase: `4270 ms`.
+- MACI proof phase: `97995 ms`.
+- Reward proof phase: `3034 ms`.
 - Reward root registration gas: `93334`.
 - Reward pool funding gas: `47396`.
-- Reward finalization gas: `664932`.
+- Reward finalization gas: `664956`.
 - Reward claim gas: `30706`.
 
 Generated reward artifacts are under `poc/artifacts/full_maci_reward/` for the

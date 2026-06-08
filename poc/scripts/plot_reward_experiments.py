@@ -5,6 +5,7 @@ from pathlib import Path
 
 try:
     import matplotlib.pyplot as plt
+    from matplotlib.patches import Patch
     from matplotlib.ticker import FuncFormatter, LogLocator, NullFormatter
 except ModuleNotFoundError as err:
     raise SystemExit(
@@ -60,7 +61,7 @@ def configure_style():
             "pdf.fonttype": 42,
             "ps.fonttype": 42,
             "savefig.bbox": "tight",
-            "savefig.pad_inches": 0.035,
+            "savefig.pad_inches": 0.08,
         }
     )
 
@@ -74,8 +75,8 @@ def save(fig, stem):
     FIG_DIR.mkdir(parents=True, exist_ok=True)
     pdf = FIG_DIR / f"{stem}.pdf"
     png = FIG_DIR / f"{stem}.png"
-    fig.savefig(pdf)
-    fig.savefig(png, dpi=300)
+    fig.savefig(pdf, bbox_inches="tight", pad_inches=0.08)
+    fig.savefig(png, dpi=300, bbox_inches="tight", pad_inches=0.08)
     plt.close(fig)
     print(f"Wrote {pdf}")
     print(f"Wrote {png}")
@@ -101,6 +102,14 @@ def percent(x, _pos):
     return f"{100 * x:.0f}%"
 
 
+def compact_amount(x, _pos=None):
+    if x >= MILLION:
+        return f"{x / MILLION:.1f}M"
+    if x >= THOUSAND:
+        return f"{x / THOUSAND:.0f}k"
+    return f"{x:.0f}"
+
+
 def plot_reward_sensitivity():
     rows = read_csv("reward_sensitivity.csv")
     profiles = [
@@ -110,7 +119,7 @@ def plot_reward_sensitivity():
         ("alternating", "alternating", COLORS["red"], "D"),
     ]
 
-    fig, ax = plt.subplots(figsize=(3.35, 2.25), constrained_layout=True)
+    fig, ax = plt.subplots(figsize=(3.55, 2.45), constrained_layout=True)
     for profile, label, color, marker in profiles:
         points = [
             (float(row["kappa"]), float(row["totalScore"]))
@@ -123,8 +132,8 @@ def plot_reward_sensitivity():
         ax.plot(xs, ys, color=color, marker=marker, label=label)
 
     set_common_axes(ax)
-    ax.set_xlabel(r"Incentive scale $\kappa$")
-    ax.set_ylabel(r"Unnormalized score mass $\sum_i T_i$ ($\times 10^6$)")
+    ax.set_xlabel(r"Reward scale $\kappa$", labelpad=4)
+    ax.set_ylabel(r"Raw score mass $\sum_i T_i$ ($\times 10^6$)", labelpad=4)
     ax.yaxis.set_major_formatter(FuncFormatter(millions))
     ax.set_xticks([50, 100, 150])
     ax.set_xlim(45, 155)
@@ -137,25 +146,26 @@ def plot_budget_allocation():
     rows = read_csv("budget_allocation.csv")
     labels = [str(int(row["voterIndex"])) for row in rows]
     payouts = [float(row["payout"]) for row in rows]
-    reports = [int(row["report"]) for row in rows]
-    colors = [COLORS["blue"] if report == 1 else COLORS["orange"] for report in reports]
+    peer_matches = [int(row["peerMatch"]) for row in rows]
+    colors = [COLORS["blue"] if match == 1 else COLORS["gray"] for match in peer_matches]
     total = sum(payouts)
-    fig, ax = plt.subplots(figsize=(3.35, 2.25), constrained_layout=True)
+    fig, ax = plt.subplots(figsize=(3.55, 2.45), constrained_layout=True)
     bars = ax.bar(range(len(labels)), payouts, color=colors, width=0.62)
     set_common_axes(ax)
-    ax.set_xlabel("Voter index")
-    ax.set_ylabel(r"Fixed-budget payout $P_i$ ($\times 10^6$)")
-    ax.yaxis.set_major_formatter(FuncFormatter(millions))
+    ax.set_xlabel("Voter index", labelpad=4)
+    ax.set_ylabel(r"Fixed-budget payout $P_i$ (log)", labelpad=4)
+    ax.set_yscale("log")
+    ax.yaxis.set_major_locator(LogLocator(base=10, numticks=5))
+    ax.yaxis.set_major_formatter(FuncFormatter(compact_amount))
+    ax.yaxis.set_minor_formatter(NullFormatter())
     ax.set_xticks(range(len(labels)), labels)
-    ax.set_ylim(0, max(payouts) * 1.22)
+    ax.set_ylim(max(1.0, min(payouts) * 0.45), max(payouts) * 2.0)
 
     for bar, value in zip(bars, payouts):
-        if value < 0.05 * MILLION:
-            continue
         ax.text(
             bar.get_x() + bar.get_width() / 2,
-            value + max(payouts) * 0.025,
-            f"{value / MILLION:.2f}",
+            value * 1.16,
+            compact_amount(value),
             ha="center",
             va="bottom",
             fontsize=7.0,
@@ -171,6 +181,14 @@ def plot_budget_allocation():
         color=MUTED,
         fontsize=7.2,
     )
+    ax.legend(
+        handles=[
+            Patch(facecolor=COLORS["blue"], label="peer match"),
+            Patch(facecolor=COLORS["gray"], label="baseline only"),
+        ],
+        loc="upper left",
+        handlelength=1.2,
+    )
     save(fig, "budget_allocation")
 
 
@@ -180,7 +198,7 @@ def plot_stake_concentration():
     dominant = [float(row["dominantPayout"]) for row in rows]
     others = [float(row["nonDominantAveragePayout"]) for row in rows]
 
-    fig, ax = plt.subplots(figsize=(3.35, 2.25), constrained_layout=True)
+    fig, ax = plt.subplots(figsize=(3.55, 2.45), constrained_layout=True)
     ax.plot(xs, dominant, color=COLORS["blue"], marker="o", label=r"Voter 2: $P_2$")
     ax.plot(xs, others, color=COLORS["orange"], marker="s", label=r"Mean others: $\frac{1}{7}\sum_{j\ne2}P_j$")
 
@@ -189,8 +207,8 @@ def plot_stake_concentration():
     ax.yaxis.set_major_locator(LogLocator(base=10, numticks=5))
     ax.yaxis.set_minor_formatter(NullFormatter())
     ax.xaxis.set_major_formatter(FuncFormatter(percent))
-    ax.set_xlabel(r"Dominant stake share $w_2 / \sum_j w_j$")
-    ax.set_ylabel(r"Fixed-budget payout $P_i$ ($\times 10^6$, log)")
+    ax.set_xlabel(r"Dominant stake share $w_2 / \sum_j w_j$", labelpad=4)
+    ax.set_ylabel(r"Fixed-budget payout $P_i$ ($\times 10^6$, log)", labelpad=4)
     ax.set_xlim(min(xs) - 0.03, max(xs) + 0.03)
     ax.yaxis.set_major_formatter(FuncFormatter(millions))
     ax.legend(loc="lower left", bbox_to_anchor=(0.0, 1.01), handlelength=1.7, borderaxespad=0.0)
@@ -209,11 +227,11 @@ def plot_cost_profile():
     values = [float(row["gas"]) for row in rows]
     colors = [COLORS["blue"], COLORS["gray"], COLORS["green"], COLORS["purple"]]
 
-    fig, ax = plt.subplots(figsize=(3.35, 2.25), constrained_layout=True)
+    fig, ax = plt.subplots(figsize=(3.55, 2.45), constrained_layout=True)
     bars = ax.bar(range(len(labels)), values, color=colors, width=0.62)
     set_common_axes(ax)
     ax.set_xticks(range(len(labels)), labels)
-    ax.set_ylabel(r"Gas ($\times 10^3$)")
+    ax.set_ylabel(r"Gas ($\times 10^3$)", labelpad=4)
     ax.yaxis.set_major_formatter(FuncFormatter(thousands))
     ax.set_ylim(0, max(values) * 1.22)
 

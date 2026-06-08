@@ -1,9 +1,10 @@
 {
-  "generatedAt": "2026-06-08T14:44:11.285Z",
+  "generatedAt": "2026-06-08T15:46:16.287Z",
   "voters": 8,
   "rewardBudget": "3000000",
   "allocationMode": "fixed_total_budget",
   "allocationBaseline": "scale",
+  "stakeDesign": "uniform stakes for report-pattern experiments; stake effects are isolated in stake_concentration.csv",
   "sweepRows": 192,
   "allocationRows": 8,
   "profiles": [
@@ -21,13 +22,13 @@
       ],
       "stakes": [
         "10",
-        "20",
         "10",
-        "15",
-        "5",
         "10",
-        "15",
-        "15"
+        "10",
+        "10",
+        "10",
+        "10",
+        "10"
       ]
     },
     {
@@ -44,13 +45,13 @@
       ],
       "stakes": [
         "10",
-        "20",
         "10",
-        "15",
-        "5",
         "10",
-        "15",
-        "15"
+        "10",
+        "10",
+        "10",
+        "10",
+        "10"
       ]
     },
     {
@@ -67,13 +68,13 @@
       ],
       "stakes": [
         "10",
-        "20",
         "10",
-        "15",
-        "5",
         "10",
-        "15",
-        "15"
+        "10",
+        "10",
+        "10",
+        "10",
+        "10"
       ]
     },
     {
@@ -90,13 +91,13 @@
       ],
       "stakes": [
         "10",
-        "20",
         "10",
-        "15",
-        "5",
         "10",
-        "15",
-        "15"
+        "10",
+        "10",
+        "10",
+        "10",
+        "10"
       ]
     }
   ],

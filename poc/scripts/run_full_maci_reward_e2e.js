@@ -202,7 +202,7 @@ const POC_ROOT = path.join(PROJECT_ROOT, "poc");
 const OUTPUT_ROOT = process.env.FULL_MACI_REWARD_OUTPUT_ROOT || path.join(POC_ROOT, "artifacts/full_maci_reward");
 const FIELD_PRIME = 21888242871839275222246405745257275088548364400416034343698204186575808495617n;
 const REPORTS = [1, 0, 1, 1, 0, 0, 1, 0];
-const STAKES = ["10", "20", "10", "15", "5", "10", "15", "15"];
+const STAKES = ["10", "10", "10", "10", "10", "10", "10", "10"];
 
 function deterministicCommandSalt(index: number): bigint {
   return BigInt(ethers.id(\`zk-peer-full-maci-command-salt-\${index}\`)) % FIELD_PRIME;

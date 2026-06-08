@@ -17,21 +17,20 @@ can bind hidden binary reports to a MACI-derived reward state root, verify
 fixed-budget peer-prediction payouts, and finalize claimable rewards on-chain.
 ```
 
-The experiments support that claim with five kinds of evidence:
-
-- end-to-end execution evidence;
-- behavior of the same reward rule under different report profiles;
-- fixed-budget allocation behavior;
-- stake-weighting behavior;
-- reward-layer on-chain cost.
+The experiments support that claim from three angles. First, the Anvil record
+shows that official MACI and the reward sidecar run together end to end. Second,
+the reward-rule figures separate report-pattern behavior from stake behavior:
+report-pattern experiments use equal stakes, while the stake-concentration
+figure is the only one that changes stake. Third, the gas figure isolates the
+reward-layer on-chain cost.
 
 ## Reader Questions
 
 | Reader question | Matching artifact | What it answers |
 | --- | --- | --- |
 | Does the full system run locally with real MACI? | `data/full_maci_reward_anvil_latest.json` | Shows official MACI deployment, voter signup, encrypted votes, MACI proofs, reward proof, finalization, and one claim on Anvil. |
-| Does the single peer-prediction rule behave sensibly across report patterns? | `figures/reward_sensitivity.pdf` | Runs the same rule under MACI-derived, one-sided, consensus, and alternating binary reports as the incentive scale changes. |
-| Does payout preserve the configured total budget? | `figures/budget_allocation.pdf` | Shows per-voter payouts for the MACI-derived profile and the exact fixed-budget total. |
+| Does the single peer-prediction rule behave sensibly across report patterns? | `figures/reward_sensitivity.pdf` | Runs the same rule under MACI-derived, one-sided, consensus, and alternating binary reports as the incentive scale changes, with stakes fixed. |
+| Does payout preserve the configured total budget? | `figures/budget_allocation.pdf` | Shows per-voter payouts for the MACI-derived profile on a log y-axis, so both peer-match payouts and baseline payouts are visible. |
 | How do public stakes affect incentives? | `figures/stake_concentration.pdf` | Increases one voter's stake and compares that voter's fixed-budget payout with the average of the others. |
 | What are the reward-specific gas costs? | `figures/cost_profile.pdf` | Separates root registration, pool funding, proof verification plus finalization, and recipient claim. |
 
@@ -39,30 +38,51 @@ The experiments support that claim with five kinds of evidence:
 
 `reward_sensitivity`
 
-- `T_i` is the unnormalized peer-prediction score before budget normalization.
-- `kappa` is the incentive scale parameter.
-- This is a calibration and implementation-check plot for the proposed
-  peer-prediction rule under representative report profiles and scale choices.
+This plot does not show final payouts. It shows the raw peer-prediction score
+mass before the fixed `3,000,000` budget is divided.
+
+`kappa` is the reward scale parameter. Larger `kappa` makes nonzero
+peer-agreement scores larger. Since the final budget is fixed, `kappa` mainly
+controls how strongly voters with nonzero scores dominate the baseline payout.
+
+The alternating profile stays near zero because, with ring peer matching,
+each voter is paired with a voter who reported the opposite value. No peer
+agreement means no raw peer-prediction score. Stakes are equal in this figure,
+so differences come from reports rather than from stake weighting.
 
 `budget_allocation`
 
-- `P_i` is the fixed-budget payout for voter `i`.
-- `sum_i P_i` equals the configured reward budget.
-- Bars are colored by binary report value for the MACI-derived report profile.
+This is the easiest plot to read as "who gets paid." `P_i` is the final payout
+for voter `i`, and the bars sum exactly to the configured reward budget.
+
+In the MACI-derived example, reports are:
+
+```text
+voter:  0 1 2 3 4 5 6 7
+report: 1 0 1 1 0 0 1 0
+peer:   1 2 3 4 5 6 7 0
+match:  no no yes no yes no no no
+```
+
+Only voter 2 and voter 4 match their assigned peer, so they receive almost all
+of the budget. The other voters receive only the small baseline payout. The
+y-axis is logarithmic because the peer-match payouts are roughly three orders of
+magnitude larger than the baseline payouts.
 
 `stake_concentration`
 
-- The dominant voter keeps the same report but receives a larger public stake.
-- The plot checks that the stake-weighted rule shifts fixed-budget payout share
-  in the expected direction.
+This plot changes voter 2's public stake while keeping the reports fixed. Since
+voter 2 has a peer-agreement signal, increasing voter 2's stake increases voter
+2's share of the fixed reward budget and reduces the average share left for the
+others.
 
 `cost_profile`
 
-- `Register root` records the final reward state root and MACI tally status.
-- `Fund pool` deposits reward funds.
-- `Verify + finalize` verifies the Groth16 reward proof and records claimable
-  balances.
-- `Claim` withdraws one recipient's already-finalized payout.
+This plot shows reward-layer gas only. `Register root` stores the final reward
+state root and MACI tally status. `Fund pool` deposits the reward budget.
+`Verify + finalize` verifies the Groth16 reward proof and records claimable
+balances, so it is the largest operation. `Claim` withdraws one recipient's
+already-finalized payout.
 
 ## Data Files
 
