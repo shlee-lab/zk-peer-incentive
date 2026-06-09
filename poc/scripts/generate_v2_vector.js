@@ -5,8 +5,7 @@ const fs = require("fs");
 const path = require("path");
 const {
   buildFinalState,
-  computeFixedBudgetPayouts,
-  computeRewardDivisionWitness,
+  computeFixedBudgetLotteryPayouts,
 } = require("../reference/reward_model");
 
 const FIELD_PRIME =
@@ -51,6 +50,7 @@ function v2Inputs() {
     smoothing: 1n,
     kappa: 100n,
     scale: 1_000n,
+    rhoTau: 3_000_000n,
     rewardBudget: 3_000_000n,
   };
 }
@@ -60,8 +60,8 @@ async function main() {
   const finalState = await buildFinalState(inputs);
   const sidecarInputs = { ...inputs, nonceCommitments: finalState.nonceCommitments };
   const rewardInputs = { ...sidecarInputs, stateRoot: finalState.finalStateRoot };
-  const allocation = computeFixedBudgetPayouts(rewardInputs);
-  const rewardWitness = computeRewardDivisionWitness(inputs);
+  const allocation = await computeFixedBudgetLotteryPayouts(rewardInputs);
+  const rewardWitness = allocation.rewardWitness;
   const payouts = allocation.payouts.map((payout) => payout.toString());
   const allocationRemainders = [...allocation.allocationRemainders, 0n].map((remainder) =>
     remainder.toString()
@@ -73,7 +73,7 @@ async function main() {
 
   const vector = {
     version: "v2",
-    description: "Deterministic fixed-budget reward vector bound to a MACI reward sidecar state root.",
+    description: "Fixed-budget lottery reward vector bound to a MACI reward sidecar state root.",
     inputs: rewardInputs,
     nonceCommitments: finalState.nonceCommitments.map((commitment) => commitment.toString()),
     leaves: finalState.leaves.map((leaf) => leaf.toString()),
@@ -82,6 +82,14 @@ async function main() {
       pathIndices: pathData.pathIndices,
     })),
     finalStateRoot: finalState.finalStateRoot.toString(),
+    seed: allocation.seed.toString(),
+    lotteryBits: allocation.lotteryBits,
+    lotteryScale: allocation.lotteryScale.toString(),
+    rhoTau: allocation.rhoTau.toString(),
+    drawHashes: allocation.drawHashes.map((hash) => hash.toString()),
+    draws: allocation.draws.map((draw) => draw.toString()),
+    wins: allocation.wins.map((win) => win.toString()),
+    lotteryTentativePayouts: allocation.lotteryTentativePayouts.map((payout) => payout.toString()),
     expectedRewards: rewardWitness.map((reward) => reward.scaled.toString()),
     rewardRemainders: rewardWitness.map((reward) => reward.remainder.toString()),
     allocationBaseline: allocation.allocationBaseline.toString(),
@@ -107,6 +115,7 @@ async function main() {
     smoothing: inputs.smoothing,
     kappa: inputs.kappa,
     scale: inputs.scale,
+    rhoTau: inputs.rhoTau,
     disputeId: inputs.disputeId,
     finalStateRoot: finalState.finalStateRoot,
     rewardBudget: inputs.rewardBudget,

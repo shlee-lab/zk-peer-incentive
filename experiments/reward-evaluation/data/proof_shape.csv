@@ -1,7 +1,7 @@
 metric,value
 voters,8
 merkle_depth,3
-public_inputs,30
+public_inputs,31
 private_inputs,88
-constraints,17262
-allocation_mode,fixed_total_budget
+constraints,23786
+allocation_mode,fixed_budget_lottery

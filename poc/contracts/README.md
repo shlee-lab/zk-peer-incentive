@@ -42,8 +42,8 @@ These contracts are the minimal payout layer for the ZK reward PoC.
 7. Call `finalizeRewards` with recipients, payouts, proof, and public signals.
 8. Recipients call `claim(disputeId)`.
 
-`IntegratedRewardPool` checks that public signal index 27 equals `disputeId`
-and index 28 equals the registry's `finalStateRoot`. It also checks recipient
+`IntegratedRewardPool` checks that public signal index 28 equals `disputeId`
+and index 29 equals the registry's `finalStateRoot`. It also checks recipient
 public signals `8..15` against the submitted recipient addresses and requires
 the registry entry's `maciTallyVerified` flag to be true.
 
@@ -51,7 +51,7 @@ the registry entry's `maciTallyVerified` flag to be true.
 
 `snarkjs` generates verifier contracts with a typed Groth16 interface rather
 than the generic `bytes` interface used by `RewardPool`.
-`RewardVerifierAdapter` decodes `abi.encode(a, b, c)` and copies the 30 public
+`RewardVerifierAdapter` decodes `abi.encode(a, b, c)` and copies the 31 public
 signals into the generated verifier's fixed-size array.
 
 For a production contract, prefer a typed adapter and a stable proof/public

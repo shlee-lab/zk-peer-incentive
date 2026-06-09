@@ -17,6 +17,7 @@ payouts are consistent with hidden reports and the announced reward rule.
 - `smoothing`: smoothing parameter `a`.
 - `kappa`: reward scale.
 - `scale`: integer scale used for fixed-point scores.
+- `rhoTau`: lottery ticket payout scale and threshold denominator.
 - `payout[i]`: public fixed-budget payout for voter `i`.
 - `recipient[i]`: public payout address for voter `i`, encoded as a 160-bit
   field element.
@@ -85,13 +86,35 @@ $$
 \left\lfloor \tau_i\cdot \mathrm{scale}\right\rfloor.
 $$
 
+The lottery seed is:
+
+$$
+\mathrm{seed}=H(nonce_0,\ldots,nonce_{N-1},disputeId,finalStateRoot).
+$$
+
+Each voter draw is:
+
+$$
+u_i=\mathrm{low}_{32}(H(\mathrm{seed}, i)).
+$$
+
+The lottery winner bit is:
+
+$$
+\mathrm{win}_i =
+\begin{cases}
+1, & u_i \rhoTau < \mathrm{expectedScaled}_i 2^{32},\\
+0, & \text{otherwise.}
+\end{cases}
+$$
+
 The fixed-budget allocation score is:
 
 $$
-\alpha_i=\mathrm{expectedScaled}_i+\mathrm{scale}.
+\alpha_i=\mathrm{scale}+\mathrm{win}_i\rhoTau.
 $$
 
-The public payouts are normalized to a fixed budget `B = rewardBudget`:
+The public payouts are then normalized to a fixed budget `B = rewardBudget`:
 
 $$
 \mathrm{payout}_i \approx
@@ -156,7 +179,28 @@ $$
    0\le \mathrm{rem}_i < B_i.
    $$
 
-6. Fixed-budget allocation:
+6. Lottery draw:
+
+   $$
+   \mathrm{seed}=H(nonce_0,\ldots,nonce_{N-1},disputeId,finalStateRoot),
+   \qquad
+   u_i=\mathrm{low}_{32}(H(\mathrm{seed}, i)).
+   $$
+
+   The circuit enforces:
+
+   $$
+   \mathrm{win}_i =
+   [u_i\rhoTau < \mathrm{expectedScaled}_i2^{32}]
+   $$
+
+   and requires:
+
+   $$
+   \mathrm{expectedScaled}_i \le \rhoTau.
+   $$
+
+7. Fixed-budget allocation:
 
    $$
    B\alpha_i=\mathrm{payout}_i\sum_j\alpha_j+\mathrm{allocRem}_i
@@ -175,13 +219,13 @@ $$
    \sum_i\mathrm{payout}_i=B.
    $$
 
-7. Reward sidecar nonce opening:
+8. Reward sidecar nonce opening:
 
    $$
    nonceCommitment_i = H(nonce_i, 0)
    $$
 
-8. Reward sidecar final-state inclusion:
+9. Reward sidecar final-state inclusion:
 
    $$
    leaf_i = H(maciStateIndex_i, voterId_i, r_i, nonceCommitment_i, stake_i, recipient_i)
@@ -190,10 +234,10 @@ $$
    and the fixed-position Merkle path for index `i` must reconstruct the public
    `finalStateRoot`.
 
-9. Public range checks:
+10. Public range checks:
 
    - `stakes[i]`, `smoothing`, `kappa`, and `scale` fit in 32 bits.
-   - `rewardBudget`, `payout[i]`, and `expectedScaled[i]` fit in 64 bits.
+   - `rhoTau`, `rewardBudget`, `payout[i]`, and `expectedScaled[i]` fit in 64 bits.
    - `recipient[i]` fits in 160 bits.
    - `rem_i` fits within the 128-bit comparison domain.
 
@@ -202,8 +246,8 @@ The circuit uses `circomlib` Poseidon, bit decomposition, and less-than gadgets.
 ## Proof Claim and Scope
 
 Given a sound and zero-knowledge proof system, a valid proof implies that the
-public fixed-budget payouts match the hidden reports and nonces under the
-announced reward rule and public context, and that those same reports/nonces
+public fixed-budget lottery payouts match the hidden reports and nonces under
+the announced reward rule and public context, and that those same reports/nonces
 open to the nonce commitments and reports included in the public reward sidecar
 root. The proof does not itself reveal the reports or nonces.
 

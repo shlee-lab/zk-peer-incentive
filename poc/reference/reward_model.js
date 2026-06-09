@@ -278,6 +278,108 @@ async function verifyLotteryPayouts(inputs, expectedPayouts) {
   return payouts.every((payout, i) => payout === toBigInt(expectedPayouts[i], `expected[${i}]`));
 }
 
+async function computeFixedBudgetLotteryPayouts({
+  reports,
+  stakes,
+  peerIndices,
+  nonces,
+  disputeId,
+  stateRoot,
+  smoothing = 1n,
+  kappa = 1n,
+  scale = 1_000_000n,
+  rhoTau,
+  rewardBudget,
+  lotteryBits = 32,
+}) {
+  assertInputs({ reports, stakes, peerIndices, smoothing, kappa });
+  if (!Array.isArray(nonces) || nonces.length !== reports.length) {
+    throw new Error("nonces must have the same length as reports");
+  }
+  if (!Number.isInteger(lotteryBits) || lotteryBits <= 0 || lotteryBits > 64) {
+    throw new Error("lotteryBits must be an integer in [1, 64]");
+  }
+
+  const brhoTau = toBigInt(rhoTau, "rhoTau");
+  if (brhoTau <= 0n) throw new Error("rhoTau must be positive");
+  const budget = toBigInt(rewardBudget, "rewardBudget");
+  if (budget <= 0n) throw new Error("rewardBudget must be positive");
+
+  const rewardWitness = computeRewardDivisionWitness({
+    reports,
+    stakes,
+    peerIndices,
+    smoothing,
+    kappa,
+    scale,
+  });
+  const lotteryScale = 1n << BigInt(lotteryBits);
+  const seed = await poseidonHash([
+    ...nonces.map((nonce, i) => toBigInt(nonce, `nonces[${i}]`)),
+    toBigInt(disputeId, "disputeId"),
+    toBigInt(stateRoot, "stateRoot"),
+  ]);
+
+  const drawHashes = [];
+  const draws = [];
+  const wins = [];
+  const lotteryTentativePayouts = [];
+  for (let i = 0; i < reports.length; i += 1) {
+    if (rewardWitness[i].scaled > brhoTau) {
+      throw new Error(`rhoTau must cover expected reward at index ${i}`);
+    }
+    const drawHash = await poseidonHash([seed, BigInt(i)]);
+    const draw = lowBits(drawHash, lotteryBits);
+    const win = draw * brhoTau < rewardWitness[i].scaled * lotteryScale ? 1n : 0n;
+    drawHashes.push(drawHash);
+    draws.push(draw);
+    wins.push(win);
+    lotteryTentativePayouts.push(win === 1n ? brhoTau : 0n);
+  }
+
+  const allocationBaseline = toBigInt(scale, "scale");
+  const allocationScores = lotteryTentativePayouts.map((tentative) => tentative + allocationBaseline);
+  const totalAllocationScore = allocationScores.reduce((acc, score) => acc + score, 0n);
+  if (totalAllocationScore <= 0n) throw new Error("total allocation score must be positive");
+
+  const payouts = [];
+  const allocationRemainders = [];
+  let allocated = 0n;
+  for (let i = 0; i < reports.length - 1; i += 1) {
+    const numerator = budget * allocationScores[i];
+    const payout = numerator / totalAllocationScore;
+    const remainder = numerator % totalAllocationScore;
+    payouts.push(payout);
+    allocationRemainders.push(remainder);
+    allocated += payout;
+  }
+  payouts.push(budget - allocated);
+
+  return {
+    seed,
+    lotteryBits,
+    lotteryScale,
+    rhoTau: brhoTau,
+    rewardBudget: budget,
+    rewardWitness,
+    drawHashes,
+    draws,
+    wins,
+    lotteryTentativePayouts,
+    allocationBaseline,
+    allocationScores,
+    totalAllocationScore,
+    allocationRemainders,
+    payouts,
+  };
+}
+
+async function verifyFixedBudgetLotteryPayouts(inputs, expectedPayouts) {
+  const { payouts } = await computeFixedBudgetLotteryPayouts(inputs);
+  if (expectedPayouts.length !== payouts.length) return false;
+  return payouts.every((payout, i) => payout === toBigInt(expectedPayouts[i], `expected[${i}]`));
+}
+
 function computeFixedBudgetPayouts({
   reports,
   stakes,
@@ -508,6 +610,7 @@ module.exports = {
   buildMerkleTree,
   cmp,
   computeFixedBudgetPayouts,
+  computeFixedBudgetLotteryPayouts,
   computeLeaveOneOutNormalizers,
   computeLotteryPayouts,
   computeRewardDivisionWitness,
@@ -526,6 +629,7 @@ module.exports = {
   toBigInt,
   verifyMerklePath,
   verifyFixedBudgetPayouts,
+  verifyFixedBudgetLotteryPayouts,
   verifyLotteryPayouts,
   verifyScaledPayouts,
 };

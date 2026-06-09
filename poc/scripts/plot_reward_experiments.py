@@ -115,7 +115,8 @@ def plot_reward_sensitivity():
     profiles = [
         ("maci_anvil_reports", "MACI-derived", COLORS["blue"], "o"),
         ("one_sided", "one-sided", COLORS["green"], "s"),
-        ("consensus", "equal-split cases", COLORS["gray"], "^"),
+        ("consensus", "consensus", COLORS["purple"], "^"),
+        ("alternating", "no-match", COLORS["gray"], "D"),
     ]
 
     fig, ax = plt.subplots(figsize=(3.55, 2.45), constrained_layout=True)
@@ -134,9 +135,9 @@ def plot_reward_sensitivity():
     ax.set_xlabel(r"Reward scale $\kappa$", labelpad=4)
     ax.set_ylabel(r"Largest payout share $\max_i P_i/B$", labelpad=4)
     ax.yaxis.set_major_formatter(FuncFormatter(percent))
-    ax.set_xticks([0, 25, 50, 100, 150])
-    ax.set_xlim(-3, 155)
-    ax.set_ylim(0.10, 0.53)
+    ax.set_xticks([0, 25, 50, 100])
+    ax.set_xlim(-3, 105)
+    ax.set_ylim(0.10, 0.78)
     ax.legend(
         ncol=2,
         loc="lower left",
@@ -152,8 +153,8 @@ def plot_budget_allocation():
     rows = read_csv("budget_allocation.csv")
     labels = [str(int(row["voterIndex"])) for row in rows]
     payouts = [float(row["payout"]) for row in rows]
-    peer_matches = [int(row["peerMatch"]) for row in rows]
-    colors = [COLORS["blue"] if match == 1 else COLORS["gray"] for match in peer_matches]
+    lottery_wins = [int(row["lotteryWin"]) for row in rows]
+    colors = [COLORS["blue"] if win == 1 else COLORS["gray"] for win in lottery_wins]
     total = sum(payouts)
     fig, ax = plt.subplots(figsize=(3.55, 2.45), constrained_layout=True)
     bars = ax.bar(range(len(labels)), payouts, color=colors, width=0.62)
@@ -189,8 +190,8 @@ def plot_budget_allocation():
     )
     ax.legend(
         handles=[
-            Patch(facecolor=COLORS["blue"], label="peer match"),
-            Patch(facecolor=COLORS["gray"], label="baseline only"),
+            Patch(facecolor=COLORS["blue"], label="lottery winner"),
+            Patch(facecolor=COLORS["gray"], label="not selected"),
         ],
         loc="lower left",
         bbox_to_anchor=(0.0, 1.01),

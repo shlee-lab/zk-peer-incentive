@@ -6,8 +6,7 @@ const path = require("path");
 const { spawnSync } = require("child_process");
 const {
   buildFinalState,
-  computeFixedBudgetPayouts,
-  computeRewardDivisionWitness,
+  computeFixedBudgetLotteryPayouts,
 } = require("../reference/reward_model");
 
 const FIELD_PRIME =
@@ -102,6 +101,7 @@ function baseInputs(sidecar, attempt) {
     smoothing: BigInt(sidecar.smoothing ?? 1),
     kappa: BigInt(sidecar.kappa ?? 100),
     scale: BigInt(sidecar.scale ?? 1_000),
+    rhoTau: BigInt(sidecar.rhoTau ?? 3_000_000),
     rewardBudget: BigInt(sidecar.rewardBudget ?? 3_000_000),
   };
 }
@@ -111,16 +111,16 @@ async function buildVector(sidecar, attempt) {
   const finalState = await buildFinalState(inputs);
   const sidecarInputs = { ...inputs, nonceCommitments: finalState.nonceCommitments };
   const rewardInputs = { ...sidecarInputs, stateRoot: finalState.finalStateRoot };
-  const allocation = computeFixedBudgetPayouts(rewardInputs);
-  const rewardWitness = computeRewardDivisionWitness(inputs);
+  const allocation = await computeFixedBudgetLotteryPayouts(rewardInputs);
+  const rewardWitness = allocation.rewardWitness;
   const payouts = allocation.payouts.map((payout) => payout.toString());
   const allocationRemainders = [...allocation.allocationRemainders, 0n].map((remainder) =>
     remainder.toString()
   );
 
   const vector = {
-    version: "full-maci-sidecar-v2",
-    description: "Fixed-budget reward vector derived from official MACI final poll reports with recipient and command-salt nonce binding.",
+    version: "full-maci-sidecar-fixed-budget-lottery",
+    description: "Fixed-budget lottery reward vector derived from official MACI final poll reports with recipient and command-salt nonce binding.",
     inputs: rewardInputs,
     nonceCommitments: finalState.nonceCommitments.map((commitment) => commitment.toString()),
     leaves: finalState.leaves.map((leaf) => leaf.toString()),
@@ -129,6 +129,14 @@ async function buildVector(sidecar, attempt) {
       pathIndices: pathData.pathIndices,
     })),
     finalStateRoot: finalState.finalStateRoot.toString(),
+    seed: allocation.seed.toString(),
+    lotteryBits: allocation.lotteryBits,
+    lotteryScale: allocation.lotteryScale.toString(),
+    rhoTau: allocation.rhoTau.toString(),
+    drawHashes: allocation.drawHashes.map((hash) => hash.toString()),
+    draws: allocation.draws.map((draw) => draw.toString()),
+    wins: allocation.wins.map((win) => win.toString()),
+    lotteryTentativePayouts: allocation.lotteryTentativePayouts.map((payout) => payout.toString()),
     expectedRewards: rewardWitness.map((reward) => reward.scaled.toString()),
     rewardRemainders: rewardWitness.map((reward) => reward.remainder.toString()),
     allocationBaseline: allocation.allocationBaseline.toString(),
@@ -155,6 +163,7 @@ async function buildVector(sidecar, attempt) {
     smoothing: inputs.smoothing,
     kappa: inputs.kappa,
     scale: inputs.scale,
+    rhoTau: inputs.rhoTau,
     disputeId: inputs.disputeId,
     finalStateRoot: finalState.finalStateRoot,
     rewardBudget: inputs.rewardBudget,
@@ -231,8 +240,8 @@ async function main() {
     recipients,
     payoutCount: N,
     totalPayout: totalPayout.toString(),
-    disputeId: publicSignals[27],
-    finalStateRoot: publicSignals[28],
+    disputeId: publicSignals[28],
+    finalStateRoot: publicSignals[29],
     proofGenerationMs,
   };
   writeJson(fixtureFile, fixture);
@@ -242,6 +251,7 @@ async function main() {
     finalRewardStateRoot: vector.finalStateRoot,
     nonceSource: sidecar.nonceSource || "maci-vote-command-salt",
     reports: inputs.reports,
+    lotteryWins: vector.wins,
     maciStateIndices: inputs.maciStateIndices.map((value) => value.toString()),
     tallyPayouts: amounts,
     totalPayout: totalPayout.toString(),

@@ -3,13 +3,15 @@
 `reward_check.circom` is the fixed-budget reward sidecar circuit for the relation in
 `../zk_relation.md`.
 
-It verifies fixed-budget payouts for hidden binary reports and private nonces using:
+It verifies fixed-budget lottery payouts for hidden binary reports and private nonces using:
 
 - smoothed stake-weighted leave-one-out frequency;
 - inverse-frequency peer agreement;
 - ring peer matching, `peer(i) = i+1 mod N`;
-- integer floor payouts via quotient/remainder constraints.
-- fixed-budget normalization with `allocationScore_i = expectedScaled_i + scale`;
+- lottery draws from `Poseidon(seed, i)`, where `seed` binds all private nonces
+  plus the dispute id and reward sidecar root;
+- integer floor payouts via quotient/remainder constraints;
+- fixed-budget normalization with `allocationScore_i = scale + win_i * rhoTau`;
 - Poseidon nonce commitments `H(nonce_i, 0)`;
 - Poseidon reward sidecar leaves
   `H(maciStateIndex_i, voterId_i, report_i, nonceCommitment_i, stake_i, recipient_i)`;
@@ -76,7 +78,7 @@ finalized.
 The private `nonces[i]` values are intended to be MACI `VoteCommand.salt`
 values in the full MACI experiment.
 
-The public input vector has 30 values:
+The public input vector has 31 values:
 
 ```text
 payouts[0..7]
@@ -85,7 +87,8 @@ stakes[16..23]
 smoothing[24]
 kappa[25]
 scale[26]
-disputeId[27]
-finalStateRoot[28]
-rewardBudget[29]
+rhoTau[27]
+disputeId[28]
+finalStateRoot[29]
+rewardBudget[30]
 ```

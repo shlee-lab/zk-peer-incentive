@@ -118,11 +118,12 @@ finalRewardStateRoot = MerkleRoot(leaf_1, ..., leaf_N)
 ```
 
 The reward circuit privately opens `nonce_i` to `nonceCommitment_i`, verifies
-Merkle inclusion against `finalRewardStateRoot`, computes the fixed-budget
-peer-prediction rewards, and exposes payouts plus `pollId` and `finalRewardStateRoot` as
-public signals. The current full MACI experiment uses each encrypted
-`VoteCommand.salt` as the private reward nonce, and the circuit also exposes
-recipient addresses so the payout contract can bind claims to the proof.
+Merkle inclusion against `finalRewardStateRoot`, computes fixed-budget lottery
+peer-prediction rewards, and exposes payouts plus `pollId` and
+`finalRewardStateRoot` as public signals. The current full MACI experiment uses
+each encrypted `VoteCommand.salt` as the private reward nonce, and the circuit
+also exposes recipient addresses so the payout contract can bind claims to the
+proof.
 
 This remains experimental. The MACI baseline is real; the reward sidecar binding
 is a PoC adapter and is not a production security claim.
@@ -169,18 +170,20 @@ Latest observed Anvil run:
 - Total spent voice credits: `648`.
 - Derived reports: `[1, 0, 1, 1, 0, 0, 1, 0]`.
 - Final reward sidecar root:
-  `6468364380890747372936892381836443558652490888163692339671766082874531690666`.
+  `9085344411136641853726403055769717154468974807716947437918939447230816557425`.
 - Reward nonce source: `MACI VoteCommand.salt`.
 - Reward budget: `3000000`.
+- Reward mode: fixed-budget lottery with `rhoTau = 3000000`.
 - Stake design: uniform public stake `10` for all eight voters.
-- Fixed-budget payouts: `[644, 644, 1498065, 644, 1498065, 644, 644, 650]`.
+- Lottery wins: `[0, 0, 1, 0, 1, 0, 0, 0]`.
+- Fixed-budget lottery payouts: `[499, 499, 1498501, 499, 1498501, 499, 499, 503]`.
 - Sample claim index: `0`.
-- MACI proof phase: `97995 ms`.
-- Reward proof phase: `3034 ms`.
+- MACI proof phase: `101229 ms`.
+- Reward proof phase: `2970 ms`.
 - Reward root registration gas: `93334`.
 - Reward pool funding gas: `47396`.
-- Reward finalization gas: `664956`.
-- Reward claim gas: `30706`.
+- Reward finalization gas: `671978`.
+- Reward claim gas: `30684`.
 
 Generated reward artifacts are under `poc/artifacts/full_maci_reward/` for the
 Hardhat harness and `poc/artifacts/full_maci_reward_anvil/` for Anvil. They are

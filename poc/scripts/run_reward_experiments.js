@@ -2,17 +2,24 @@
 
 const fs = require("fs");
 const path = require("path");
+const crypto = require("crypto");
 const {
-  computeFixedBudgetPayouts,
-  computeRewardDivisionWitness,
+  computeFixedBudgetLotteryPayouts,
 } = require("../reference/reward_model");
 
 const N = 8;
+const FIELD_PRIME = 21888242871839275222246405745257275088548364400416034343698204186575808495617n;
 const REPO_ROOT = path.resolve(__dirname, "../..");
 const OUT_DIR = path.join(REPO_ROOT, "experiments/reward-evaluation");
 const DATA_DIR = path.join(OUT_DIR, "data");
 const DEFAULT_STAKES = Array.from({ length: N }, () => 10n);
 const DEFAULT_BUDGET = 3_000_000n;
+const DEFAULT_RHO_TAU = 3_000_000n;
+const LOTTERY_SAMPLE_COUNT = 64;
+
+function fieldElement(label) {
+  return BigInt(`0x${crypto.createHash("sha256").update(label).digest("hex")}`) % FIELD_PRIME;
+}
 
 function csvEscape(value) {
   const text = String(value);
@@ -47,6 +54,10 @@ function decimal(num, den, digits = 6) {
   return `${whole}.${frac}`;
 }
 
+function decimalFromNumber(value, digits = 6) {
+  return value.toFixed(digits);
+}
+
 function median(values) {
   const sorted = [...values].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
   return sorted[Math.floor(sorted.length / 2)];
@@ -59,6 +70,14 @@ function baseInputs(profile) {
     peerIndices: Array.from({ length: N }, (_, i) => (i + 1) % N),
     disputeId: 78n,
     scale: 1_000n,
+    rhoTau: DEFAULT_RHO_TAU,
+  };
+}
+
+function lotteryContext(profile, sampleIndex) {
+  return {
+    nonces: Array.from({ length: N }, (_, i) => fieldElement(`${profile.name} sample ${sampleIndex} nonce ${i}`)),
+    stateRoot: fieldElement(`${profile.name} sample ${sampleIndex} state root`),
   };
 }
 
@@ -74,10 +93,10 @@ function payoutStats(allocation) {
   };
 }
 
-function runSweep(profiles) {
+async function runSweep(profiles) {
   const rows = [];
   const smoothings = [1n, 2n, 5n, 10n];
-  const kappas = [0n, 1n, 5n, 10n, 25n, 50n, 100n, 150n];
+  const kappas = [0n, 1n, 5n, 10n, 25n, 50n, 100n];
   const rewardBudgets = [1_000_000n, 3_000_000n, 10_000_000n];
 
   for (const profile of profiles) {
@@ -85,8 +104,9 @@ function runSweep(profiles) {
     for (const smoothing of smoothings) {
       for (const kappa of kappas) {
         for (const rewardBudget of rewardBudgets) {
-          const allocation = computeFixedBudgetPayouts({
+          const allocation = await computeFixedBudgetLotteryPayouts({
             ...common,
+            ...lotteryContext(profile, 0),
             smoothing,
             kappa,
             rewardBudget,
@@ -114,20 +134,23 @@ function runSweep(profiles) {
   return rows;
 }
 
-function runBudgetAllocation(profile) {
+async function runBudgetAllocation(profile) {
   const inputs = {
     ...baseInputs(profile),
+    ...lotteryContext(profile, 0),
     smoothing: 1n,
     kappa: 100n,
     rewardBudget: DEFAULT_BUDGET,
   };
-  const allocation = computeFixedBudgetPayouts(inputs);
+  const allocation = await computeFixedBudgetLotteryPayouts(inputs);
   return allocation.payouts.map((payout, index) => ({
     voterIndex: index,
     report: profile.reports[index],
     peerIndex: inputs.peerIndices[index],
     peerReport: profile.reports[inputs.peerIndices[index]],
     peerMatch: profile.reports[index] === profile.reports[inputs.peerIndices[index]] ? 1 : 0,
+    lotteryWin: allocation.wins[index].toString(),
+    lotteryDraw: allocation.draws[index].toString(),
     stake: profile.stakes[index].toString(),
     expectedScore: allocation.rewardWitness[index].scaled.toString(),
     allocationScore: allocation.allocationScores[index].toString(),
@@ -136,9 +159,9 @@ function runBudgetAllocation(profile) {
   }));
 }
 
-function runStakeConcentration(profile) {
+async function runStakeConcentration(profile) {
   const rows = [];
-  const multipliers = [1n, 2n, 4n, 8n, 16n, 32n, 64n];
+  const multipliers = [1n, 2n, 4n, 8n];
   const dominantIndex = 2;
   for (const multiplier of multipliers) {
     const stakes = [...profile.stakes];
@@ -147,70 +170,106 @@ function runStakeConcentration(profile) {
       ...baseInputs({ ...profile, stakes }),
       smoothing: 1n,
       kappa: 100n,
+      rhoTau: 25_000_000n,
       rewardBudget: DEFAULT_BUDGET,
     };
-    const allocation = computeFixedBudgetPayouts(inputs);
-    const expected = allocation.rewardWitness.map((reward) => reward.scaled);
+    let dominantPayoutSum = 0n;
+    let othersAverageSum = 0n;
+    let dominantWinCount = 0;
+    let totalScore = 0n;
+    let totalPayout = 0n;
+    for (let sample = 0; sample < LOTTERY_SAMPLE_COUNT; sample += 1) {
+      const allocation = await computeFixedBudgetLotteryPayouts({
+        ...inputs,
+        ...lotteryContext({ name: `${profile.name}-stake-${multiplier}` }, sample),
+      });
+      const expected = allocation.rewardWitness.map((reward) => reward.scaled);
+      totalScore = expected.reduce((acc, value) => acc + value, 0n);
+      totalPayout = allocation.payouts.reduce((acc, value) => acc + value, 0n);
+      dominantPayoutSum += allocation.payouts[dominantIndex];
+      othersAverageSum +=
+        (totalPayout - allocation.payouts[dominantIndex]) / BigInt(N - 1);
+      if (allocation.wins[dominantIndex] === 1n) dominantWinCount += 1;
+    }
     const totalStake = stakes.reduce((acc, value) => acc + value, 0n);
-    const totalScore = expected.reduce((acc, value) => acc + value, 0n);
-    const totalPayout = allocation.payouts.reduce((acc, value) => acc + value, 0n);
-    const nonDominantAveragePayout =
-      (totalPayout - allocation.payouts[dominantIndex]) / BigInt(N - 1);
+    const sampleCount = BigInt(LOTTERY_SAMPLE_COUNT);
+    const dominantPayout = dominantPayoutSum / sampleCount;
+    const nonDominantAveragePayout = othersAverageSum / sampleCount;
     rows.push({
       dominantStakeMultiplier: multiplier.toString(),
       dominantVoterIndex: dominantIndex,
       dominantStakeShare: decimal(stakes[dominantIndex], totalStake, 6),
-      dominantExpectedScore: expected[dominantIndex].toString(),
+      dominantWinRate: decimalFromNumber(dominantWinCount / LOTTERY_SAMPLE_COUNT, 6),
       totalScore: totalScore.toString(),
-      dominantPayout: allocation.payouts[dominantIndex].toString(),
-      dominantPayoutShare: decimal(allocation.payouts[dominantIndex], DEFAULT_BUDGET, 6),
+      dominantPayout: dominantPayout.toString(),
+      dominantPayoutShare: decimal(dominantPayout, DEFAULT_BUDGET, 6),
       nonDominantAveragePayout: nonDominantAveragePayout.toString(),
-      medianPayout: median(allocation.payouts).toString(),
       totalPayout: totalPayout.toString(),
       totalStake: totalStake.toString(),
+      samples: LOTTERY_SAMPLE_COUNT,
     });
   }
   return rows;
 }
 
-function runRewardTable(profiles) {
+async function runRewardTable(profiles) {
   const rows = [];
   for (const profile of profiles) {
     for (const smoothing of [1n, 5n, 10n]) {
-      for (const kappa of [0n, 1n, 5n, 10n, 25n, 50n, 100n, 150n]) {
+      for (const kappa of [0n, 1n, 5n, 10n, 25n, 50n, 100n]) {
         const common = baseInputs(profile);
-        const allocation = computeFixedBudgetPayouts({
-          ...common,
-          smoothing,
-          kappa,
-          rewardBudget: DEFAULT_BUDGET,
-        });
-        const expected = allocation.rewardWitness.map((reward) => reward.scaled);
-        const stats = payoutStats(allocation);
         const peerMatches = profile.reports.map((report, index) =>
           report === profile.reports[common.peerIndices[index]] ? 1 : 0
         );
-        const peerMatchPayout = allocation.payouts.reduce(
-          (acc, payout, index) => acc + (peerMatches[index] === 1 ? payout : 0n),
-          0n
-        );
+        let totalScore = 0n;
+        let totalAllocationScore = 0n;
+        let minScore = 0n;
+        let medianScore = 0n;
+        let maxScore = 0n;
+        let avgPeerMatchPayoutShare = 0;
+        let avgMaxPayoutShare = 0;
+        let avgWinnerCount = 0;
+        for (let sample = 0; sample < LOTTERY_SAMPLE_COUNT; sample += 1) {
+          const allocation = await computeFixedBudgetLotteryPayouts({
+            ...common,
+            ...lotteryContext(profile, sample),
+            smoothing,
+            kappa,
+            rewardBudget: DEFAULT_BUDGET,
+          });
+          const expected = allocation.rewardWitness.map((reward) => reward.scaled);
+          const stats = payoutStats(allocation);
+          const peerMatchPayout = allocation.payouts.reduce(
+            (acc, payout, index) => acc + (peerMatches[index] === 1 ? payout : 0n),
+            0n
+          );
+          totalScore = expected.reduce((acc, value) => acc + value, 0n);
+          totalAllocationScore = allocation.totalAllocationScore;
+          minScore = expected.reduce((acc, value) => (value < acc ? value : acc), expected[0]);
+          medianScore = median(expected);
+          maxScore = expected.reduce((acc, value) => (value > acc ? value : acc), 0n);
+          avgPeerMatchPayoutShare += Number(peerMatchPayout) / Number(DEFAULT_BUDGET);
+          avgMaxPayoutShare += Number(stats.maxPayout) / Number(DEFAULT_BUDGET);
+          avgWinnerCount += allocation.wins.filter((win) => win === 1n).length;
+        }
+        avgPeerMatchPayoutShare /= LOTTERY_SAMPLE_COUNT;
+        avgMaxPayoutShare /= LOTTERY_SAMPLE_COUNT;
+        avgWinnerCount /= LOTTERY_SAMPLE_COUNT;
         rows.push({
           profile: profile.name,
           smoothing: smoothing.toString(),
           kappa: kappa.toString(),
-          totalScore: expected.reduce((acc, value) => acc + value, 0n).toString(),
-          totalAllocationScore: allocation.totalAllocationScore.toString(),
+          totalScore: totalScore.toString(),
+          totalAllocationScore: totalAllocationScore.toString(),
           peerMatchCount: peerMatches.reduce((acc, value) => acc + value, 0),
-          peerMatchPayout: peerMatchPayout.toString(),
-          peerMatchPayoutShare: decimal(peerMatchPayout, DEFAULT_BUDGET, 6),
-          minScore: expected.reduce((acc, value) => (value < acc ? value : acc), expected[0]).toString(),
-          medianScore: median(expected).toString(),
-          maxScore: expected.reduce((acc, value) => (value > acc ? value : acc), 0n).toString(),
-          minPayout: stats.minPayout.toString(),
-          medianPayout: stats.medianPayout.toString(),
-          maxPayout: stats.maxPayout.toString(),
-          maxPayoutShare: decimal(stats.maxPayout, DEFAULT_BUDGET, 6),
-          totalPayout: stats.totalPayout.toString(),
+          avgWinnerCount: decimalFromNumber(avgWinnerCount, 6),
+          peerMatchPayoutShare: decimalFromNumber(avgPeerMatchPayoutShare, 6),
+          maxPayoutShare: decimalFromNumber(avgMaxPayoutShare, 6),
+          minScore: minScore.toString(),
+          medianScore: medianScore.toString(),
+          maxScore: maxScore.toString(),
+          totalPayout: DEFAULT_BUDGET.toString(),
+          samples: LOTTERY_SAMPLE_COUNT,
           reports: profile.reports.join(""),
         });
       }
@@ -223,10 +282,10 @@ function writeProofShape() {
   writeCsv(path.join(DATA_DIR, "proof_shape.csv"), [
     { metric: "voters", value: 8 },
     { metric: "merkle_depth", value: 3 },
-    { metric: "public_inputs", value: 30 },
+    { metric: "public_inputs", value: 31 },
     { metric: "private_inputs", value: 88 },
-    { metric: "constraints", value: 17262 },
-    { metric: "allocation_mode", value: "fixed_total_budget" },
+    { metric: "constraints", value: 23786 },
+    { metric: "allocation_mode", value: "fixed_budget_lottery" },
   ]);
 }
 
@@ -255,10 +314,10 @@ async function main() {
   ];
 
   fs.mkdirSync(DATA_DIR, { recursive: true });
-  const sweepRows = runSweep(profiles);
-  const allocationRows = runBudgetAllocation(profiles[0]);
-  const concentrationRows = runStakeConcentration(profiles[0]);
-  const rewardRows = runRewardTable(profiles);
+  const sweepRows = await runSweep(profiles);
+  const allocationRows = await runBudgetAllocation(profiles[0]);
+  const concentrationRows = await runStakeConcentration(profiles[0]);
+  const rewardRows = await runRewardTable(profiles);
 
   writeCsv(path.join(DATA_DIR, "parameter_sweep.csv"), sweepRows);
   writeCsv(path.join(DATA_DIR, "budget_allocation.csv"), allocationRows);
@@ -271,6 +330,9 @@ async function main() {
     rewardBudget: DEFAULT_BUDGET.toString(),
     allocationMode: "fixed_total_budget",
     allocationBaseline: "scale",
+    lotteryMode: "fixed-budget lottery; winners are sampled by Poseidon(seed, i), then payouts are normalized to rewardBudget",
+    rhoTau: DEFAULT_RHO_TAU.toString(),
+    lotterySamples: LOTTERY_SAMPLE_COUNT,
     stakeDesign: "uniform stakes for report-pattern experiments; stake effects are isolated in stake_concentration.csv",
     sweepRows: sweepRows.length,
     allocationRows: allocationRows.length,
@@ -281,7 +343,7 @@ async function main() {
     })),
     notes: [
       "Payouts are normalized to a fixed reward budget; total payout equals rewardBudget.",
-      "Reward sensitivity is plotted as max_i P_i / rewardBudget, not raw score mass.",
+      "Reward sensitivity is plotted as average max_i P_i / rewardBudget over deterministic lottery samples.",
       "A scale-sized allocation baseline keeps the denominator nonzero for all-zero-score profiles.",
       "Circuit and contract remain fixed at N=8 for this PoC.",
     ],

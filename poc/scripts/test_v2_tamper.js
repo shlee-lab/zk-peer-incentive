@@ -69,8 +69,14 @@ function main() {
   expectWitnessFailure("out_of_range_reward_budget", (input) => {
     input.rewardBudget = (1n << 64n).toString();
   });
+  expectWitnessFailure("out_of_range_rho_tau", (input) => {
+    input.rhoTau = (1n << 64n).toString();
+  });
   expectWitnessFailure("tampered_final_state_root", (input) => {
     input.finalStateRoot = (BigInt(input.finalStateRoot) + 1n).toString();
+  });
+  expectWitnessFailure("tampered_rho_tau", (input) => {
+    input.rhoTau = (BigInt(input.rhoTau) - 1n).toString();
   });
   expectWitnessFailure("tampered_payout", (input) => {
     input.payouts[0] = (BigInt(input.payouts[0]) + 1n).toString();

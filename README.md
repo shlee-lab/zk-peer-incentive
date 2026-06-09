@@ -42,9 +42,9 @@ leaf_i = Poseidon(maciStateIndex_i, voterId_i, report_i, nonceCommitment_i, stak
 
 The reward proof then shows that the prover knows hidden reports and nonce
 openings included in that root, and that the public payout vector follows the
-reward rule. The Solidity reward pool checks the proof, checks that the root is
-the registered final reward state, records claimable balances, and lets each
-recipient withdraw their assigned payout.
+fixed-budget lottery reward rule. The Solidity reward pool checks the proof,
+checks that the root is the registered final reward state, records claimable
+balances, and lets each recipient withdraw their assigned payout.
 
 The claim supported by the PoC is intentionally narrow:
 
@@ -56,24 +56,28 @@ The claim supported by the PoC is intentionally narrow:
 
 The current reward rule is fixed-size and intentionally simple: `N = 8`, binary
 reports, public stakes, ring peer matching, and smoothed inverse-frequency peer
-agreement. The mechanism first computes an unnormalized peer-prediction score
-`T_i` for each voter. It then adds a baseline and normalizes all scores into a
-fixed reward budget `B`:
+agreement. The mechanism first computes an expected peer-prediction score `T_i`
+for each voter. A private nonce-derived lottery draw then selects winners with
+probability approximately `T_i / rhoTau`.
 
 ```text
-score_i = T_i + scale
+seed = Poseidon(nonce_0, ..., nonce_7, disputeId, finalRewardStateRoot)
+u_i = low32(Poseidon(seed, i))
+win_i = 1 if u_i * rhoTau < T_i * 2^32, else 0
+score_i = scale + win_i * rhoTau
 payout_i ~= B * score_i / sum_j score_j
 sum_i payout_i = B
 ```
 
-The final payout receives the deterministic rounding residue, so the payout
-vector always sums exactly to the configured budget. Reports only change how
-that fixed pool is divided.
+The lottery decides who receives the large allocation score, but the final
+payout vector is still normalized into the configured fixed budget `B`. The last
+payout receives the integer rounding residue, so the payout vector always sums
+exactly to the budget.
 
 Here, `kappa` is the reward scale. Increasing `kappa` makes peer-agreement
-scores larger before the fixed-budget normalization step. It does not create a
-larger reward pool; it changes how strongly the nonzero peer-prediction scores
-dominate the small baseline.
+scores larger before the lottery threshold step. It does not create a larger
+reward pool; it changes the chance that a peer-matching voter becomes a lottery
+winner.
 
 ## Current Result
 
@@ -84,10 +88,11 @@ The latest full local run uses official MACI at commit
 ```text
 MACI tally: option0 = 36, option1 = 36
 reports: [1, 0, 1, 1, 0, 0, 1, 0]
-payouts: [644, 644, 1498065, 644, 1498065, 644, 644, 650]
-MACI proof phase: 97995 ms
-reward proof phase: 3034 ms
-reward circuit: 17,262 constraints, 30 public inputs, 88 private inputs
+lottery wins: [0, 0, 1, 0, 1, 0, 0, 0]
+payouts: [499, 499, 1498501, 499, 1498501, 499, 499, 503]
+MACI proof phase: 101229 ms
+reward proof phase: 2970 ms
+reward circuit: 23,786 constraints, 31 public inputs, 88 private inputs
 Foundry tests: 13 passed
 ```
 
@@ -96,8 +101,8 @@ Reward-specific gas from the same run was:
 ```text
 registerFinalState   93,334 gas
 fundDispute          47,396 gas
-finalizeRewards     664,956 gas
-claim                30,706 gas
+finalizeRewards     671,978 gas
+claim                30,684 gas
 ```
 
 `finalizeRewards` is the expensive reward-layer operation because it verifies
@@ -114,34 +119,30 @@ and what the reward-only on-chain cost looks like.
 
 Reward-scale sensitivity:
 
-This graph shows a final-payout metric: the largest single payout divided by
-the fixed budget. The x-axis `kappa` is the reward multiplier. At `kappa = 0`,
-everyone gets an equal baseline share. As `kappa` increases, profiles with only
-a few peer matches concentrate more of the fixed budget on those matching
-voters. Consensus and fully alternating profiles stay close to equal-split
-behavior: in consensus everyone matches equally, while in the alternating case
-no one has a peer match. Stake is fixed here, so the chart isolates report
-pattern and reward-scale effects.
+This graph shows a lottery-aware final-payout metric averaged over deterministic
+seed samples: the largest single payout divided by the fixed budget. At
+`kappa = 0`, everyone gets an equal baseline share. As `kappa` increases,
+profiles with peer matches are more likely to produce lottery winners, so the
+fixed budget concentrates on fewer voters. The no-match profile stays at the
+equal baseline because no voter can win the reward lottery.
 
 ![Reward-scale sensitivity](experiments/reward-evaluation/figures/reward_sensitivity.png)
 
 Fixed-budget allocation:
 
-This graph shows how the fixed `3,000,000` budget is divided in the MACI-derived
-example. The y-axis is logarithmic so both the large peer-match payouts and the
-small baseline payouts remain visible. Voter 2 and voter 4 receive most of the
-budget because they are the only voters whose report matches their assigned
-peer's report. Since all stakes are fixed to the same value in this chart, those
-two voters receive the same large payout.
+This graph shows one fixed-budget lottery realization for the MACI-derived
+report profile. The y-axis is logarithmic so both the winner payout and the
+small baseline payouts remain visible. A peer match creates lottery eligibility;
+the lottery draw decides which eligible voters become winners in that seed.
 
 ![Budget allocation](experiments/reward-evaluation/figures/budget_allocation.png)
 
 Stake weighting:
 
 This graph is the only one that changes stake. It changes voter 2's public stake
-while keeping the report pattern fixed. It checks that, when a voter has a valid
-peer-agreement signal, increasing that voter's stake increases their share of
-the fixed reward budget.
+while keeping the report pattern fixed and averages over deterministic lottery
+seeds. It checks that, when a voter has a valid peer-agreement signal,
+increasing that voter's stake increases expected payout share.
 
 ![Stake-weighting behavior](experiments/reward-evaluation/figures/stake_concentration.png)
 

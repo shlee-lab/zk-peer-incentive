@@ -14,7 +14,8 @@ The prototype claim is:
 ```text
 Official MACI can run a private local voting flow, and a separate reward proof
 can bind hidden binary reports to a MACI-derived reward state root, verify
-fixed-budget peer-prediction payouts, and finalize claimable rewards on-chain.
+fixed-budget lottery peer-prediction payouts, and finalize claimable rewards
+on-chain.
 ```
 
 The experiments support that claim from three angles. First, the Anvil record
@@ -29,17 +30,17 @@ reward-layer on-chain cost.
 | Reader question | Matching artifact | What it answers |
 | --- | --- | --- |
 | Does the full system run locally with real MACI? | `data/full_maci_reward_anvil_latest.json` | Shows official MACI deployment, voter signup, encrypted votes, MACI proofs, reward proof, finalization, and one claim on Anvil. |
-| Does the single peer-prediction rule behave sensibly across report patterns? | `figures/reward_sensitivity.pdf` | Shows how the largest final payout share changes with the reward scale, with stakes fixed. |
-| Does payout preserve the configured total budget? | `figures/budget_allocation.pdf` | Shows per-voter payouts for the MACI-derived profile on a log y-axis, so both peer-match payouts and baseline payouts are visible. |
-| How do public stakes affect incentives? | `figures/stake_concentration.pdf` | Increases one voter's stake and compares that voter's fixed-budget payout with the average of the others. |
+| Does the single peer-prediction rule behave sensibly across report patterns? | `figures/reward_sensitivity.pdf` | Shows how the largest final payout share changes with the reward scale under fixed-budget lottery sampling, with stakes fixed. |
+| Does payout preserve the configured total budget? | `figures/budget_allocation.pdf` | Shows one per-voter fixed-budget lottery payout vector for the MACI-derived profile on a log y-axis. |
+| How do public stakes affect incentives? | `figures/stake_concentration.pdf` | Increases one voter's stake and compares that voter's average fixed-budget lottery payout with the average of the others. |
 | What are the reward-specific gas costs? | `figures/cost_profile.pdf` | Separates root registration, pool funding, proof verification plus finalization, and recipient claim. |
 
 ## Figure Interpretation
 
 `reward_sensitivity`
 
-This plot shows a final-payout quantity, not an internal score. The y-axis is
-the largest single payout share:
+This plot shows a final-payout quantity averaged over deterministic lottery
+seed samples. The y-axis is the largest single payout share:
 
 ```text
 max_i P_i / B
@@ -48,22 +49,21 @@ max_i P_i / B
 where `B` is the fixed reward budget.
 
 `kappa` is the reward scale parameter. At `kappa = 0`, the peer-prediction score
-is disabled and the budget is split evenly. As `kappa` increases, report
-profiles with only a few peer matches concentrate more of the fixed budget on
-those matching voters.
+is disabled and the budget is split evenly. As `kappa` increases, peer-matching
+voters become more likely to win the lottery, so the fixed budget concentrates
+on sampled winners.
 
-The MACI-derived profile approaches a 50% largest-payout share because two
-voters match their peers and split almost all of the budget. The one-sided
-profile approaches about one-sixth because six voters match. Consensus and
-alternating are shown as equal-split cases: consensus gives everyone the same
-peer-match status, while alternating gives no one a peer match. Stakes are equal
-in this figure, so differences come from reports rather than from stake
-weighting.
+The no-match profile stays at the equal baseline because no voter can win the
+lottery. Consensus can still concentrate in a given draw because everyone is
+eligible but only some voters are sampled as winners. Stakes are equal in this
+figure, so differences come from reports, reward scale, and lottery sampling
+rather than from stake weighting.
 
 `budget_allocation`
 
-This is the easiest plot to read as "who gets paid." `P_i` is the final payout
-for voter `i`, and the bars sum exactly to the configured reward budget.
+This is the easiest plot to read as "who gets paid in this lottery draw." `P_i`
+is the final payout for voter `i`, and the bars sum exactly to the configured
+reward budget.
 
 In the MACI-derived example, reports are:
 
@@ -74,17 +74,18 @@ peer:   1 2 3 4 5 6 7 0
 match:  no no yes no yes no no no
 ```
 
-Only voter 2 and voter 4 match their assigned peer, so they receive almost all
-of the budget. The other voters receive only the small baseline payout. The
-y-axis is logarithmic because the peer-match payouts are roughly three orders of
-magnitude larger than the baseline payouts.
+Only voter 2 and voter 4 match their assigned peer, so they are eligible for a
+large lottery-backed allocation. In the plotted seed, voter 4 wins and voter 2
+does not. The other voters receive only the small baseline payout. The y-axis is
+logarithmic because winner payouts are roughly three orders of magnitude larger
+than baseline payouts.
 
 `stake_concentration`
 
-This plot changes voter 2's public stake while keeping the reports fixed. Since
-voter 2 has a peer-agreement signal, increasing voter 2's stake increases voter
-2's share of the fixed reward budget and reduces the average share left for the
-others.
+This plot changes voter 2's public stake while keeping the reports fixed and
+averaging over deterministic lottery seeds. Since voter 2 has a peer-agreement
+signal, increasing voter 2's stake increases voter 2's expected share of the
+fixed reward budget and reduces the average share left for the others.
 
 `cost_profile`
 

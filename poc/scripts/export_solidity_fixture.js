@@ -117,8 +117,8 @@ ${proofBytes(proof)}
       recipients,
       payoutCount: amounts.length,
       totalPayout: totalPayout.toString(),
-      disputeId: publicSignals[27],
-      finalStateRoot: publicSignals[28],
+      disputeId: publicSignals[28],
+      finalStateRoot: publicSignals[29],
     };
     fs.mkdirSync(path.dirname(jsonOutputFile), { recursive: true });
     fs.writeFileSync(jsonOutputFile, `${JSON.stringify(jsonFixture, null, 2)}\n`);
