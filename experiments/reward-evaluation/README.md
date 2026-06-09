@@ -39,6 +39,92 @@ reward-layer on-chain cost.
 | What are the reward-specific gas costs? | `figures/cost_profile.pdf` | Separates root registration, pool funding, proof verification plus finalization, and recipient claim. |
 | How much capacity is wasted when a max-size reward circuit is underfilled? | `figures/reward_scaling.pdf` | Uses one `N_max = 64` reward circuit and varies active voters across `8, 16, 32, 64`. |
 | What does operation cost look like at larger dispute sizes? | `figures/operating_cost_projection.pdf` | Projects reward-layer operating cost for 10, 100, and 1000 claimants under fixed gas-price scenarios. |
+| What public payout exposure does one hidden report have? | `data/exposure_sanity.csv` | Flips one report at a time and counts changed public payout coordinates. |
+
+## Public Transcript Privacy Notes
+
+The paper-level privacy object is the public reward transcript, not a single
+recipient's payout. In this prototype the transcript includes the public payout
+vector, verifier public inputs, reward finalization transaction data, claimable
+balances, and other on-chain reward contract state.
+
+The implementation uses ring peer matching:
+
+```text
+peer_i = (i + 1) mod N
+```
+
+Changing voter `t`'s hidden report directly affects the peer-agreement test for
+voter `t`, and for any voter that uses `t` as its peer. In the ring graph there
+is exactly one such predecessor, `(t - 1) mod N`, so the direct peer-graph
+exposure is:
+
+```text
+D_graph = 2
+directly affected coordinates: {t, (t - 1) mod N}
+```
+
+The current public payout vector has a larger conservative exposure. The
+same-dispute leave-one-out normalizer can change score denominators for other
+voters, the fixed-budget allocation normalizes every payout by the same total
+allocation score, and the current lottery seed includes `finalRewardStateRoot`.
+Because a report flip changes that root, it can also resample lottery draws.
+For the integrated `N = 8` prototype, the documented transcript exposure degree
+is therefore:
+
+```text
+D = 8
+```
+
+The exposure sanity CSV confirms this bound for the included profiles: the
+maximum observed `changedPayoutCount` is `8`. If a target transcript
+distinguishability budget is `eta`, the coordinate-level design target for this
+prototype should be read as approximately `eta / 8`. A future low-exposure
+variant would need to remove or localize the global normalizer, global
+fixed-budget denominator, or root-dependent lottery resampling before claiming
+the lower ring-graph value `D_graph = 2`.
+
+## Theory-To-Prototype Mapping
+
+| Term | Meaning in the paper/prototype | Prototype status |
+| --- | --- | --- |
+| `rho_tau` / `rhoTau` | Maximum lottery allocation scale used before fixed-budget normalization. It is not an independent final payout cap because final payouts are normalized to `B`. | Implemented as a public circuit input and contract public signal. |
+| `eta` | Target distinguishability for the full public reward transcript. | Design parameter only; the prototype does not estimate or enforce `eta`. |
+| `D` | Maximum number of public payout coordinates affected by one hidden report. | Documented/measured as `D = 8` for the current `N = 8` public payout transcript; direct ring-graph exposure is `D_graph = 2`. |
+| `eta / D` | Coordinate-level leakage target when the transcript budget is split over affected payout coordinates. | Design guidance only; not enforced by code. |
+| `kappa` | Reward scale that controls how strongly peer agreement affects lottery eligibility. | Implemented as a public input; experiments sweep it. |
+| `p_tilde` | Empirical report-frequency normalizer used by the reward rule. | Approximated by a same-dispute leave-one-out, stake-weighted, smoothed plug-in normalizer. |
+| `rewardBudget B` | Fixed total budget distributed by the final payout vector. | Implemented as `rewardBudget`; circuit enforces `sum_i payout_i = B`. |
+| nonce source | Randomness input for lottery draws. | Experimental. The full MACI sidecar uses MACI vote command salts as nonce material; deterministic experiments use labeled Poseidon-derived nonces. Production randomness is out of scope. |
+| public inputs | Values visible to the verifier/contract. | Implemented: `payouts`, `recipients`, `stakes`, `smoothing`, `kappa`, `scale`, `rhoTau`, `disputeId`, `finalStateRoot`, and `rewardBudget`. |
+| private inputs | Witness values hidden by the proof. | Implemented: reports, nonces, MACI state indices, voter ids, nonce commitments, Merkle paths, expected-score witnesses, and division remainders. |
+
+## Reward Semantics And Normalization
+
+The reward rule is a fixed-budget lottery. The circuit first samples lottery
+winners from nonce-derived randomness, then converts winner indicators into
+allocation scores, and finally normalizes all public payouts to the fixed
+budget `B`. This is not a contract that independently pays `rhoTau` to every
+Bernoulli winner; `rhoTau` affects the pre-normalization allocation score.
+
+The frequency normalizer is same-dispute leave-one-out:
+
+```text
+p_tilde_i(1) = (sum_{j != i} stake_j * report_j + smoothing)
+               / (sum_{j != i} stake_j + 2 * smoothing)
+p_tilde_i(0) = 1 - p_tilde_i(1)
+```
+
+This is a practical plug-in normalizer for independent dispute questions, not a
+clean estimator of a universal report frequency across disputes. The formal
+incentive guarantee should be read conditionally: the chosen `p_tilde` must
+remain inside the paper's truthfulness interval `[beta, alpha]`.
+
+Implemented safeguards are intentionally modest. The model and circuit use
+smoothing, denominator checks, bounded public input ranges, and the circuit
+checks that expected rewards do not exceed `rhoTau`. The prototype does not
+clip `p_tilde` into `[beta, alpha]`, does not learn a historical calibration
+distribution, and does not implement a production fallback policy.
 
 ## Figure Interpretation
 
@@ -149,6 +235,8 @@ The table assumes one reward finalization and one claim per recipient.
   figure, including final payout-share metrics and raw score diagnostics.
 - `lottery_confidence.csv`: 512-sample lottery run with mean confidence
   intervals and percentile summaries.
+- `exposure_sanity.csv`: one-report-flip sanity check for public payout
+  coordinate exposure.
 - `budget_allocation.csv`: fixed-budget payout vector for the MACI-derived
   report profile.
 - `stake_concentration.csv`: dominant-stake sweep.

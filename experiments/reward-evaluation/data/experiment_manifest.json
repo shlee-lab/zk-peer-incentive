@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-06-09T09:15:40.277Z",
+  "generatedAt": "2026-06-09T16:48:59.100Z",
   "voters": 8,
   "rewardBudget": "3000000",
   "allocationMode": "fixed_total_budget",
@@ -8,6 +8,9 @@
   "rhoTau": "3000000",
   "lotterySamples": 64,
   "lotteryConfidenceSamples": 512,
+  "exposureRows": 64,
+  "exposureMaxChangedPayoutCount": 8,
+  "exposureRhoTau": "25000000",
   "stakeDesign": "uniform stakes for report-pattern experiments; stake effects are isolated in stake_concentration.csv",
   "sweepRows": 336,
   "allocationRows": 8,
@@ -111,6 +114,7 @@
     "Lottery confidence data reports 5th, 50th, and 95th percentile bands over deterministic lottery samples.",
     "A scale-sized allocation baseline keeps the denominator nonzero for all-zero-score profiles.",
     "Lottery seed uses a Poseidon fold over poll id, final reward root, and included nonces.",
+    "Exposure sanity flips one report at a time; current public payout transcript exposure is conservatively documented as D=8.",
     "The integrated MACI/reward flow remains fixed at N=8; capacity-utilization data is generated separately with N_max=64."
   ]
 }

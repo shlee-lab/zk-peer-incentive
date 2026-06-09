@@ -75,12 +75,25 @@ sum_i payout_i = B
 The lottery decides who receives the large allocation score, but the final
 payout vector is still normalized into the configured fixed budget `B`. The last
 payout receives the integer rounding residue, so the payout vector always sums
-exactly to the budget.
+exactly to the budget. In other words, this is not an independent Bernoulli
+contract that simply pays `rhoTau` to every winner; `rhoTau` is a
+pre-normalization allocation scale.
 
 Here, `kappa` is the reward scale. Increasing `kappa` makes peer-agreement
 scores larger before the lottery threshold step. It does not create a larger
 reward pool; it changes the chance that a peer-matching voter becomes a lottery
 winner.
+
+The current peer graph is a ring: voter `i` is compared with voter `i + 1`.
+That graph has direct local exposure `D_graph = 2`, because changing one report
+can directly affect the voter's own peer-agreement test and the predecessor that
+uses that voter as a peer. The public payout transcript has a larger documented
+bound in this prototype: `D = 8` for the integrated `N = 8` run. The reason is
+that same-dispute frequency normalization, fixed-budget payout normalization,
+and the root-bound lottery seed can propagate one report change across the full
+public payout vector. See
+[experiments/reward-evaluation/README.md](experiments/reward-evaluation/README.md)
+for the theory-to-prototype mapping and the generated exposure sanity check.
 
 ## Current Result
 

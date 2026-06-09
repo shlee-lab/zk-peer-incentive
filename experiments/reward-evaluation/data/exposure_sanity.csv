@@ -1,0 +1,65 @@
+profile,mode,voterIndex,originalReport,flippedReport,directRingAffectedIndices,changedPayoutCount,changedPayoutIndices,maxAbsPayoutChange,totalAbsPayoutChange,description
+maci_anvil_reports,fixed_seed,0,1,0,0;7,0,,0,0,same nonces and same state root; isolates reward-rule payout changes
+maci_anvil_reports,fixed_seed,1,0,1,0;1,0,,0,0,same nonces and same state root; isolates reward-rule payout changes
+maci_anvil_reports,fixed_seed,2,1,0,1;2,0,,0,0,same nonces and same state root; isolates reward-rule payout changes
+maci_anvil_reports,fixed_seed,3,1,0,2;3,0,,0,0,same nonces and same state root; isolates reward-rule payout changes
+maci_anvil_reports,fixed_seed,4,0,1,3;4,0,,0,0,same nonces and same state root; isolates reward-rule payout changes
+maci_anvil_reports,fixed_seed,5,0,1,4;5,0,,0,0,same nonces and same state root; isolates reward-rule payout changes
+maci_anvil_reports,fixed_seed,6,1,0,5;6,0,,0,0,same nonces and same state root; isolates reward-rule payout changes
+maci_anvil_reports,fixed_seed,7,0,1,6;7,0,,0,0,same nonces and same state root; isolates reward-rule payout changes
+maci_anvil_reports,current_root_seed,0,1,0,0;7,0,,0,0,"same nonces, recomputed finalRewardStateRoot; matches current seed binding"
+maci_anvil_reports,current_root_seed,1,0,1,0;1,8,0;1;2;3;4;5;6;7,2624160,5248320,"same nonces, recomputed finalRewardStateRoot; matches current seed binding"
+maci_anvil_reports,current_root_seed,2,1,0,1;2,0,,0,0,"same nonces, recomputed finalRewardStateRoot; matches current seed binding"
+maci_anvil_reports,current_root_seed,3,1,0,2;3,0,,0,0,"same nonces, recomputed finalRewardStateRoot; matches current seed binding"
+maci_anvil_reports,current_root_seed,4,0,1,3;4,8,0;1;2;3;4;5;6;7,2624160,5248320,"same nonces, recomputed finalRewardStateRoot; matches current seed binding"
+maci_anvil_reports,current_root_seed,5,0,1,4;5,0,,0,0,"same nonces, recomputed finalRewardStateRoot; matches current seed binding"
+maci_anvil_reports,current_root_seed,6,1,0,5;6,0,,0,0,"same nonces, recomputed finalRewardStateRoot; matches current seed binding"
+maci_anvil_reports,current_root_seed,7,0,1,6;7,8,0;1;2;3;4;5;6;7,2624160,5248320,"same nonces, recomputed finalRewardStateRoot; matches current seed binding"
+alternating,fixed_seed,0,1,0,0;7,0,,0,0,same nonces and same state root; isolates reward-rule payout changes
+alternating,fixed_seed,1,0,1,0;1,0,,0,0,same nonces and same state root; isolates reward-rule payout changes
+alternating,fixed_seed,2,1,0,1;2,0,,0,0,same nonces and same state root; isolates reward-rule payout changes
+alternating,fixed_seed,3,0,1,2;3,0,,0,0,same nonces and same state root; isolates reward-rule payout changes
+alternating,fixed_seed,4,1,0,3;4,0,,0,0,same nonces and same state root; isolates reward-rule payout changes
+alternating,fixed_seed,5,0,1,4;5,0,,0,0,same nonces and same state root; isolates reward-rule payout changes
+alternating,fixed_seed,6,1,0,5;6,0,,0,0,same nonces and same state root; isolates reward-rule payout changes
+alternating,fixed_seed,7,0,1,6;7,0,,0,0,same nonces and same state root; isolates reward-rule payout changes
+alternating,current_root_seed,0,1,0,0;7,0,,0,0,"same nonces, recomputed finalRewardStateRoot; matches current seed binding"
+alternating,current_root_seed,1,0,1,0;1,0,,0,0,"same nonces, recomputed finalRewardStateRoot; matches current seed binding"
+alternating,current_root_seed,2,1,0,1;2,0,,0,0,"same nonces, recomputed finalRewardStateRoot; matches current seed binding"
+alternating,current_root_seed,3,0,1,2;3,0,,0,0,"same nonces, recomputed finalRewardStateRoot; matches current seed binding"
+alternating,current_root_seed,4,1,0,3;4,0,,0,0,"same nonces, recomputed finalRewardStateRoot; matches current seed binding"
+alternating,current_root_seed,5,0,1,4;5,0,,0,0,"same nonces, recomputed finalRewardStateRoot; matches current seed binding"
+alternating,current_root_seed,6,1,0,5;6,0,,0,0,"same nonces, recomputed finalRewardStateRoot; matches current seed binding"
+alternating,current_root_seed,7,0,1,6;7,0,,0,0,"same nonces, recomputed finalRewardStateRoot; matches current seed binding"
+one_sided,fixed_seed,0,1,0,0;7,8,0;1;2;3;4;5;6;7,2624167,5248334,same nonces and same state root; isolates reward-rule payout changes
+one_sided,fixed_seed,1,1,0,0;1,0,,0,0,same nonces and same state root; isolates reward-rule payout changes
+one_sided,fixed_seed,2,1,0,1;2,0,,0,0,same nonces and same state root; isolates reward-rule payout changes
+one_sided,fixed_seed,3,1,0,2;3,0,,0,0,same nonces and same state root; isolates reward-rule payout changes
+one_sided,fixed_seed,4,1,0,3;4,0,,0,0,same nonces and same state root; isolates reward-rule payout changes
+one_sided,fixed_seed,5,1,0,4;5,0,,0,0,same nonces and same state root; isolates reward-rule payout changes
+one_sided,fixed_seed,6,1,0,5;6,0,,0,0,same nonces and same state root; isolates reward-rule payout changes
+one_sided,fixed_seed,7,0,1,6;7,0,,0,0,same nonces and same state root; isolates reward-rule payout changes
+one_sided,current_root_seed,0,1,0,0;7,8,0;1;2;3;4;5;6;7,1124826,4499292,"same nonces, recomputed finalRewardStateRoot; matches current seed binding"
+one_sided,current_root_seed,1,1,0,0;1,0,,0,0,"same nonces, recomputed finalRewardStateRoot; matches current seed binding"
+one_sided,current_root_seed,2,1,0,1;2,0,,0,0,"same nonces, recomputed finalRewardStateRoot; matches current seed binding"
+one_sided,current_root_seed,3,1,0,2;3,8,0;1;2;3;4;5;6;7,2624160,5248320,"same nonces, recomputed finalRewardStateRoot; matches current seed binding"
+one_sided,current_root_seed,4,1,0,3;4,0,,0,0,"same nonces, recomputed finalRewardStateRoot; matches current seed binding"
+one_sided,current_root_seed,5,1,0,4;5,0,,0,0,"same nonces, recomputed finalRewardStateRoot; matches current seed binding"
+one_sided,current_root_seed,6,1,0,5;6,8,0;1;2;3;4;5;6;7,2624160,5248320,"same nonces, recomputed finalRewardStateRoot; matches current seed binding"
+one_sided,current_root_seed,7,0,1,6;7,0,,0,0,"same nonces, recomputed finalRewardStateRoot; matches current seed binding"
+consensus,fixed_seed,0,1,0,0;7,0,,0,0,same nonces and same state root; isolates reward-rule payout changes
+consensus,fixed_seed,1,1,0,0;1,0,,0,0,same nonces and same state root; isolates reward-rule payout changes
+consensus,fixed_seed,2,1,0,1;2,0,,0,0,same nonces and same state root; isolates reward-rule payout changes
+consensus,fixed_seed,3,1,0,2;3,0,,0,0,same nonces and same state root; isolates reward-rule payout changes
+consensus,fixed_seed,4,1,0,3;4,0,,0,0,same nonces and same state root; isolates reward-rule payout changes
+consensus,fixed_seed,5,1,0,4;5,0,,0,0,same nonces and same state root; isolates reward-rule payout changes
+consensus,fixed_seed,6,1,0,5;6,0,,0,0,same nonces and same state root; isolates reward-rule payout changes
+consensus,fixed_seed,7,1,0,6;7,0,,0,0,same nonces and same state root; isolates reward-rule payout changes
+consensus,current_root_seed,0,1,0,0;7,0,,0,0,"same nonces, recomputed finalRewardStateRoot; matches current seed binding"
+consensus,current_root_seed,1,1,0,0;1,0,,0,0,"same nonces, recomputed finalRewardStateRoot; matches current seed binding"
+consensus,current_root_seed,2,1,0,1;2,0,,0,0,"same nonces, recomputed finalRewardStateRoot; matches current seed binding"
+consensus,current_root_seed,3,1,0,2;3,0,,0,0,"same nonces, recomputed finalRewardStateRoot; matches current seed binding"
+consensus,current_root_seed,4,1,0,3;4,0,,0,0,"same nonces, recomputed finalRewardStateRoot; matches current seed binding"
+consensus,current_root_seed,5,1,0,4;5,8,0;1;2;3;4;5;6;7,2624160,5248320,"same nonces, recomputed finalRewardStateRoot; matches current seed binding"
+consensus,current_root_seed,6,1,0,5;6,8,0;1;2;3;4;5;6;7,2624160,5248320,"same nonces, recomputed finalRewardStateRoot; matches current seed binding"
+consensus,current_root_seed,7,1,0,6;7,0,,0,0,"same nonces, recomputed finalRewardStateRoot; matches current seed binding"

@@ -4,6 +4,7 @@ const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
 const {
+  buildFinalState,
   computeFixedBudgetLotteryPayouts,
 } = require("../reference/reward_model");
 
@@ -15,6 +16,7 @@ const DATA_DIR = path.join(OUT_DIR, "data");
 const DEFAULT_STAKES = Array.from({ length: N }, () => 10n);
 const DEFAULT_BUDGET = 3_000_000n;
 const DEFAULT_RHO_TAU = 3_000_000n;
+const EXPOSURE_RHO_TAU = 25_000_000n;
 const LOTTERY_SAMPLE_COUNT = 64;
 const LOTTERY_CI_SAMPLE_COUNT = Number(process.env.REWARD_LOTTERY_CI_SAMPLES || 512);
 const FULL_MACI_E2E_FILE = path.join(DATA_DIR, "full_maci_reward_anvil_latest.json");
@@ -27,6 +29,10 @@ const DEFAULT_REWARD_GAS = {
 
 function fieldElement(label) {
   return BigInt(`0x${crypto.createHash("sha256").update(label).digest("hex")}`) % FIELD_PRIME;
+}
+
+function recipientValue(index) {
+  return BigInt(`0x${crypto.createHash("sha256").update(`reward recipient ${index}`).digest("hex").slice(0, 40)}`);
 }
 
 function csvEscape(value) {
@@ -116,6 +122,22 @@ function lotteryContext(profile, sampleIndex) {
     nonces: Array.from({ length: N }, (_, i) => fieldElement(`${profile.name} sample ${sampleIndex} nonce ${i}`)),
     stateRoot: fieldElement(`${profile.name} sample ${sampleIndex} state root`),
   };
+}
+
+function exposureStateInputs(profile, reports, nonces) {
+  return {
+    reports,
+    nonces,
+    stakes: profile.stakes,
+    maciStateIndices: Array.from({ length: N }, (_, i) => BigInt(i + 1)),
+    voterIds: Array.from({ length: N }, (_, i) => fieldElement(`${profile.name} exposure voter ${i}`)),
+    recipients: Array.from({ length: N }, (_, i) => recipientValue(i)),
+  };
+}
+
+async function exposureStateRoot(profile, reports, nonces) {
+  const state = await buildFinalState(exposureStateInputs(profile, reports, nonces));
+  return state.finalStateRoot;
 }
 
 function payoutStats(allocation) {
@@ -385,6 +407,97 @@ async function runLotteryConfidence(profiles) {
   return rows;
 }
 
+function payoutDiffStats(originalPayouts, flippedPayouts) {
+  const changed = [];
+  let maxAbsPayoutChange = 0n;
+  let totalAbsPayoutChange = 0n;
+  for (let i = 0; i < originalPayouts.length; i += 1) {
+    const diff = flippedPayouts[i] >= originalPayouts[i]
+      ? flippedPayouts[i] - originalPayouts[i]
+      : originalPayouts[i] - flippedPayouts[i];
+    if (diff > 0n) changed.push(i);
+    if (diff > maxAbsPayoutChange) maxAbsPayoutChange = diff;
+    totalAbsPayoutChange += diff;
+  }
+  return {
+    changed,
+    maxAbsPayoutChange,
+    totalAbsPayoutChange,
+  };
+}
+
+function directRingAffectedIndices(peerIndices, voterIndex) {
+  const affected = new Set([voterIndex]);
+  peerIndices.forEach((peerIndex, index) => {
+    if (peerIndex === voterIndex) affected.add(index);
+  });
+  return [...affected].sort((a, b) => a - b);
+}
+
+async function runExposureSanity(profiles) {
+  const rows = [];
+  for (const profile of profiles) {
+    const common = baseInputs(profile);
+    const context = lotteryContext({ name: `${profile.name}-exposure` }, 0);
+    const baseStateRoot = await exposureStateRoot(profile, profile.reports, context.nonces);
+    const modes = [
+      {
+        mode: "fixed_seed",
+        description: "same nonces and same state root; isolates reward-rule payout changes",
+        stateRootFor: async () => baseStateRoot,
+      },
+      {
+        mode: "current_root_seed",
+        description: "same nonces, recomputed finalRewardStateRoot; matches current seed binding",
+        stateRootFor: async (reports) => exposureStateRoot(profile, reports, context.nonces),
+      },
+    ];
+
+    for (const mode of modes) {
+      const originalStateRoot = await mode.stateRootFor(profile.reports);
+      const originalAllocation = await computeFixedBudgetLotteryPayouts({
+        ...common,
+        nonces: context.nonces,
+        stateRoot: originalStateRoot,
+        smoothing: 1n,
+        kappa: 100n,
+        rhoTau: EXPOSURE_RHO_TAU,
+        rewardBudget: DEFAULT_BUDGET,
+      });
+
+      for (let voterIndex = 0; voterIndex < N; voterIndex += 1) {
+        const flippedReports = [...profile.reports];
+        flippedReports[voterIndex] = flippedReports[voterIndex] === 1 ? 0 : 1;
+        const flippedStateRoot = await mode.stateRootFor(flippedReports);
+        const flippedAllocation = await computeFixedBudgetLotteryPayouts({
+          ...baseInputs({ ...profile, reports: flippedReports }),
+          nonces: context.nonces,
+          stateRoot: flippedStateRoot,
+          smoothing: 1n,
+          kappa: 100n,
+          rhoTau: EXPOSURE_RHO_TAU,
+          rewardBudget: DEFAULT_BUDGET,
+        });
+        const diff = payoutDiffStats(originalAllocation.payouts, flippedAllocation.payouts);
+        rows.push({
+          profile: profile.name,
+          mode: mode.mode,
+          voterIndex,
+          originalReport: profile.reports[voterIndex],
+          flippedReport: flippedReports[voterIndex],
+          directRingAffectedIndices: directRingAffectedIndices(common.peerIndices, voterIndex).join(";"),
+          changedPayoutCount: diff.changed.length,
+          changedPayoutIndices: diff.changed.join(";"),
+          maxAbsPayoutChange: diff.maxAbsPayoutChange.toString(),
+          totalAbsPayoutChange: diff.totalAbsPayoutChange.toString(),
+          description: mode.description,
+        });
+      }
+    }
+  }
+  return rows;
+}
+
 function writeE2EOverhead() {
   const latest = readJsonIfExists(FULL_MACI_E2E_FILE) || {};
   const proofTimes = latest.proofTimesMs || {};
@@ -530,12 +643,14 @@ async function main() {
   const concentrationRows = await runStakeConcentration(profiles[0]);
   const rewardRows = await runRewardTable(profiles);
   const lotteryConfidenceRows = await runLotteryConfidence(profiles);
+  const exposureRows = await runExposureSanity(profiles);
 
   writeCsv(path.join(DATA_DIR, "parameter_sweep.csv"), sweepRows);
   writeCsv(path.join(DATA_DIR, "budget_allocation.csv"), allocationRows);
   writeCsv(path.join(DATA_DIR, "stake_concentration.csv"), concentrationRows);
   writeCsv(path.join(DATA_DIR, "reward_sensitivity.csv"), rewardRows);
   writeCsv(path.join(DATA_DIR, "lottery_confidence.csv"), lotteryConfidenceRows);
+  writeCsv(path.join(DATA_DIR, "exposure_sanity.csv"), exposureRows);
   writeE2EOverhead();
   writeOperatingCostProjection();
   writeProofShape();
@@ -549,6 +664,9 @@ async function main() {
     rhoTau: DEFAULT_RHO_TAU.toString(),
     lotterySamples: LOTTERY_SAMPLE_COUNT,
     lotteryConfidenceSamples: LOTTERY_CI_SAMPLE_COUNT,
+    exposureRows: exposureRows.length,
+    exposureMaxChangedPayoutCount: Math.max(...exposureRows.map((row) => row.changedPayoutCount)),
+    exposureRhoTau: EXPOSURE_RHO_TAU.toString(),
     stakeDesign: "uniform stakes for report-pattern experiments; stake effects are isolated in stake_concentration.csv",
     sweepRows: sweepRows.length,
     allocationRows: allocationRows.length,
@@ -563,6 +681,7 @@ async function main() {
       "Lottery confidence data reports 5th, 50th, and 95th percentile bands over deterministic lottery samples.",
       "A scale-sized allocation baseline keeps the denominator nonzero for all-zero-score profiles.",
       "Lottery seed uses a Poseidon fold over poll id, final reward root, and included nonces.",
+      "Exposure sanity flips one report at a time; current public payout transcript exposure is conservatively documented as D=8.",
       "The integrated MACI/reward flow remains fixed at N=8; capacity-utilization data is generated separately with N_max=64.",
     ],
   });
