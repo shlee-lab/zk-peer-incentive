@@ -61,10 +61,13 @@ for each voter. A private nonce-derived lottery draw then selects winners with
 probability approximately `T_i / rhoTau`.
 
 ```text
-seed = Poseidon(nonce_0, ..., nonce_7, disputeId, finalRewardStateRoot)
+seed_0 = Poseidon(disputeId, finalRewardStateRoot)
+seed_{i+1} = Poseidon(seed_i, nonce_i)
+seed = seed_N
 u_i = low32(Poseidon(seed, i))
 win_i = 1 if u_i * rhoTau < T_i * 2^32, else 0
-score_i = scale + win_i * rhoTau
+active_i = 1 if stake_i > 0, else 0
+score_i = active_i * scale + win_i * rhoTau
 payout_i ~= B * score_i / sum_j score_j
 sum_i payout_i = B
 ```
@@ -90,18 +93,18 @@ MACI tally: option0 = 36, option1 = 36
 reports: [1, 0, 1, 1, 0, 0, 1, 0]
 lottery wins: [0, 0, 1, 0, 1, 0, 0, 0]
 payouts: [499, 499, 1498501, 499, 1498501, 499, 499, 503]
-MACI proof phase: 101229 ms
-reward proof phase: 2970 ms
-reward circuit: 23,786 constraints, 31 public inputs, 88 private inputs
+MACI proof phase: 86652 ms
+reward proof phase: 3043 ms
+reward circuit: 25,512 constraints, 31 public inputs, 88 private inputs
 Foundry tests: 13 passed
 ```
 
 Reward-specific gas from the same run was:
 
 ```text
-registerFinalState   93,334 gas
+registerFinalState   93,322 gas
 fundDispute          47,396 gas
-finalizeRewards     671,978 gas
+finalizeRewards     671,990 gas
 claim                30,684 gas
 ```
 
@@ -117,6 +120,16 @@ flow runs end to end, whether the fixed-budget reward rule behaves sensibly
 under representative report profiles, how stake weighting affects payout share,
 and what the reward-only on-chain cost looks like.
 
+End-to-end overhead:
+
+This graph compares the full MACI proof phase with the reward proof phase and
+summarizes the reward-layer gas costs from the same Anvil run. It shows that the
+reward proof is small relative to the MACI proving phase in this local setup,
+while on-chain reward finalization is dominated by proof verification and payout
+recording.
+
+![End-to-end overhead](experiments/reward-evaluation/figures/e2e_overhead.png)
+
 Reward-scale sensitivity:
 
 This graph shows a lottery-aware final-payout metric averaged over deterministic
@@ -127,6 +140,14 @@ fixed budget concentrates on fewer voters. The no-match profile stays at the
 equal baseline because no voter can win the reward lottery.
 
 ![Reward-scale sensitivity](experiments/reward-evaluation/figures/reward_sensitivity.png)
+
+Lottery confidence:
+
+This graph repeats the reward-scale experiment over 512 deterministic lottery
+samples. The MACI-derived line includes a 95% confidence interval for the mean,
+separating the average behavior from the randomness of any single draw.
+
+![Lottery confidence](experiments/reward-evaluation/figures/lottery_confidence.png)
 
 Fixed-budget allocation:
 
@@ -146,6 +167,15 @@ increasing that voter's stake increases expected payout share.
 
 ![Stake-weighting behavior](experiments/reward-evaluation/figures/stake_concentration.png)
 
+Reward capacity utilization:
+
+This graph fixes one reward circuit at `N_max = 64` and proves inputs with
+`8, 16, 32, 64` active voters. It shows the practical tradeoff of a capacity
+circuit: total proof time stays near the fixed max-size cost, while per-active
+voter overhead improves as the poll fills.
+
+![Reward capacity utilization](experiments/reward-evaluation/figures/reward_scaling.png)
+
 Reward gas:
 
 This graph separates the reward-layer on-chain costs. `Verify + finalize` is
@@ -154,6 +184,15 @@ vector. `Claim` is much smaller because it only withdraws an already-finalized
 balance.
 
 ![Reward on-chain cost](experiments/reward-evaluation/figures/cost_profile.png)
+
+Operating cost projection:
+
+This graph projects reward-layer operating cost for 10, 100, and 1000 claimants
+using the measured gas model. Deployment is excluded. The Arbitrum row is an
+execution-gas-only illustrative model, so it should be read as a scenario rather
+than a live fee quote.
+
+![Operating cost projection](experiments/reward-evaluation/figures/operating_cost_projection.png)
 
 The same figures are also exported as vector PDFs for paper or slide use. More
 detail is in [experiments/reward-evaluation/README.md](experiments/reward-evaluation/README.md).
@@ -192,16 +231,19 @@ cd poc
 python3 -m venv .venv
 . .venv/bin/activate
 pip install -r requirements.txt
-npm run experiments:reward
+npm run experiments:reward-data
+npm run experiments:reward-scaling
+npm run experiments:reward-plots
 ```
 
 ## Scope
 
-This is a local research prototype with fixed `N = 8`, binary reports, a local
-development Groth16 setup, and an experimental reward sidecar around official
-MACI. It does not include a production audit, Sybil-resistance policy,
-token-economics design, large-scale benchmarking, or proof of real-world human
-effort.
+This is a local research prototype with binary reports, a local development
+Groth16 setup, and an experimental reward sidecar around official MACI. The
+integrated Anvil flow is fixed at `N = 8`; the reward capacity-utilization
+experiment uses a standalone `N_max = 64` circuit with zero-stake padding. It
+does not include a production audit, Sybil-resistance policy, token-economics
+design, or proof of real-world human effort.
 
 MACI remains responsible for private voting and tally correctness. The new
 reward proof is responsible only for payout correctness from committed hidden

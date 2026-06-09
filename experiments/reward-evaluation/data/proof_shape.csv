@@ -3,5 +3,6 @@ voters,8
 merkle_depth,3
 public_inputs,31
 private_inputs,88
-constraints,23786
+constraints,25512
 allocation_mode,fixed_budget_lottery
+seed_mode,poseidon_fold

@@ -10,8 +10,9 @@
     "e2e:full-maci-reward": "node scripts/run_full_maci_reward_e2e.js",
     "e2e:full-maci-reward:anvil": "FULL_MACI_NETWORK=anvil node scripts/run_full_maci_reward_e2e.js",
     "experiments:reward-data": "node scripts/run_reward_experiments.js",
+    "experiments:reward-scaling": "node scripts/run_reward_scaling_experiments.js",
     "experiments:reward-plots": "python3 scripts/plot_reward_experiments.py",
-    "experiments:reward": "npm run experiments:reward-data && npm run experiments:reward-plots",
+    "experiments:reward": "npm run experiments:reward-data && npm run experiments:reward-scaling && npm run experiments:reward-plots",
     "test:v2:circuit": "node scripts/test_v2_tamper.js",
     "test:reference": "node reference/test_reward_model.js",
     "bench:reference": "node scripts/benchmark_reference.js"

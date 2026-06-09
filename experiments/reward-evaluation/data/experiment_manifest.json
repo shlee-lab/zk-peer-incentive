@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-06-09T06:48:36.657Z",
+  "generatedAt": "2026-06-09T09:15:40.277Z",
   "voters": 8,
   "rewardBudget": "3000000",
   "allocationMode": "fixed_total_budget",
@@ -7,6 +7,7 @@
   "lotteryMode": "fixed-budget lottery; winners are sampled by Poseidon(seed, i), then payouts are normalized to rewardBudget",
   "rhoTau": "3000000",
   "lotterySamples": 64,
+  "lotteryConfidenceSamples": 512,
   "stakeDesign": "uniform stakes for report-pattern experiments; stake effects are isolated in stake_concentration.csv",
   "sweepRows": 336,
   "allocationRows": 8,
@@ -107,7 +108,9 @@
   "notes": [
     "Payouts are normalized to a fixed reward budget; total payout equals rewardBudget.",
     "Reward sensitivity is plotted as average max_i P_i / rewardBudget over deterministic lottery samples.",
+    "Lottery confidence data reports 5th, 50th, and 95th percentile bands over deterministic lottery samples.",
     "A scale-sized allocation baseline keeps the denominator nonzero for all-zero-score profiles.",
-    "Circuit and contract remain fixed at N=8 for this PoC."
+    "Lottery seed uses a Poseidon fold over poll id, final reward root, and included nonces.",
+    "The integrated MACI/reward flow remains fixed at N=8; capacity-utilization data is generated separately with N_max=64."
   ]
 }

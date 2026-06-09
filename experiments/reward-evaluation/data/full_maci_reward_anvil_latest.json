@@ -6,56 +6,91 @@
     "option1": "36",
     "totalSpentVoiceCredits": "648"
   },
-  "reports": [1, 0, 1, 1, 0, 0, 1, 0],
+  "reports": [
+    1,
+    0,
+    1,
+    1,
+    0,
+    0,
+    1,
+    0
+  ],
   "stakeDesign": "uniform",
-  "stakes": ["10", "10", "10", "10", "10", "10", "10", "10"],
+  "stakes": [
+    "10",
+    "10",
+    "10",
+    "10",
+    "10",
+    "10",
+    "10",
+    "10"
+  ],
   "rewardMode": "fixed-budget lottery",
   "rhoTau": "3000000",
-  "lotteryWins": ["0", "0", "1", "0", "1", "0", "0", "0"],
-  "finalRewardStateRoot": "9085344411136641853726403055769717154468974807716947437918939447230816557425",
+  "lotteryWins": [
+    "0",
+    "0",
+    "1",
+    "0",
+    "1",
+    "0",
+    "0",
+    "0"
+  ],
+  "finalRewardStateRoot": "426932089057462803361229057099226512330903834465667996684422281122836954804",
   "rewardNonceSource": "maci-vote-command-salt",
   "rewardBudget": "3000000",
-  "payouts": ["499", "499", "1498501", "499", "1498501", "499", "499", "503"],
-  "paidRecipientIndices": [0, 1, 2, 3, 4, 5, 6, 7],
+  "payouts": [
+    "499",
+    "499",
+    "1498501",
+    "499",
+    "1498501",
+    "499",
+    "499",
+    "503"
+  ],
+  "paidRecipientIndices": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7
+  ],
   "totalPayout": "3000000",
   "sampleClaimIndex": 0,
   "sampleClaimant": "0xf17f52151EbEF6C7334FAD080c5704D77216b732",
   "sampleClaimableBefore": "499",
   "poolBalanceAfterSampleClaim": "2999501",
   "proofTimesMs": {
-    "maci": 101229,
-    "reward": 2970
-  },
-  "maciProofTxHashes": {
-    "processMessages": "0xd2bcf81813c11f9959a752531d2eb909bcdf6d3ca58350768fc75d5d70bfcfe6",
-    "tallyVotes": [
-      "0x611c041f3ac36a273f9e07f8b83d2666683fc4cdfde5327f7034471bf512f888",
-      "0x98a32fcf7eb3cd57ebb09f5ea212243c072c83923494b4f5af213cfac7451580",
-      "0xe4db8e7780339cf597204096ed284bc50d7a29d42ac6fe20bf3ba89628460722",
-      "0xe6102ad5de62d48e7b3ea3f9ddf509856ee8134e5c006e8696d7663ab19b36c3",
-      "0x540ef1838cebf1fab5a526ce77085f7e6e5b533b23b0aae7269a4f34c6a7ade6"
-    ]
+    "maci": 86652,
+    "reward": 3043
   },
   "rewardGas": {
-    "registerFinalState": 93334,
+    "registerFinalState": 93322,
     "fundDispute": 47396,
-    "finalizeRewards": 671978,
+    "finalizeRewards": 671990,
     "claim": 30684
   },
   "rewardDeployGas": {
-    "RewardGroth16Verifier": 957812,
+    "RewardGroth16Verifier": 957632,
     "RewardVerifierAdapter": 328329,
     "FinalStateRegistry": 365305,
     "IntegratedRewardPool": 1221211
   },
   "rewardTxHashes": {
-    "RewardGroth16VerifierDeploy": "0x842074849eedfa2c22da256bf0fa7de11d386eadf31d8699e6ae4a0a5e0e5987",
-    "RewardVerifierAdapterDeploy": "0x77ac6a7183160a883b8b7074be6cddd8ee29b0d893f6d945597dad0f7dcd1001",
-    "FinalStateRegistryDeploy": "0x31d5b24f5a7a0e3eb448245aa6ac03b1809c967d71993225bafc26ac7d95c56e",
-    "IntegratedRewardPoolDeploy": "0x13ac2af2e7fe282c21d82f8a35a4eb443740e254943d0e96c75f492689404038",
-    "registerFinalState": "0xcefac0b517bf442b141bff796889fd5464e899537e135226cd1b9009936ff425",
-    "fundDispute": "0xf0a8dd83b27d4d2fe9cf21524001888e7a2d89486eff8e05bc64c4e429de7e66",
-    "finalizeRewards": "0x6408fe14699aa9f143b555887ab575e0384f37abe006270fdafec1c3fb9740bc",
-    "claim": "0x60846b5a31341129799e1aaf79b2fe3026a8fd0c0ec62b2d1d8f07ee69840f22"
+    "RewardGroth16VerifierDeploy": "0xde94e898e08592ee1510902291155d175b55cab286c4e2674d82bc925124a421",
+    "RewardVerifierAdapterDeploy": "0xc78df549fb1e9874edfd034c2e3c7c76915100a28d880f29c67063cc18941a2f",
+    "FinalStateRegistryDeploy": "0x805cde7571764c8f154d0e0515941ac45b06e55bf10bf7757ba6dc5a482532e1",
+    "IntegratedRewardPoolDeploy": "0x4ecf33a2d46193650a155e2087af81bc475c84aa330c70fd7c602d2090eb6736",
+    "reward.registerFinalState": "0xbfc4be21369262537f29c8413d22fa75d17c44eaf5f9acf2974e23ed75ede898",
+    "reward.fundDispute": "0xf533b557d5f890993b88f48c18b898331851842edef4ef6baa04e79153755a8b",
+    "reward.finalizeRewards": "0x97f6ad3742fdccfe153e9dd1931106a003a663b1d91662b481adad668737833e",
+    "reward.claim": "0xafc2d36f85f1d451a5eb0392c2ae345dba761a96616238e19611f11ba31503a0"
   }
 }

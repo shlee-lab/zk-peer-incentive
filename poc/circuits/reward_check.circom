@@ -39,16 +39,21 @@ include "../node_modules/circomlib/circuits/bitify.circom";
 // D_i = sum_{j != i} stake_j + 2*smoothing
 // N_i = sum_{j != i} stake_j * report_j + smoothing
 // B_i = report_i * N_i + (1-report_i) * (D_i-N_i)
-// The lottery seed is Poseidon(nonce_0, ..., nonce_N-1, disputeId,
-// finalStateRoot). Each draw is the low 32 bits of Poseidon(seed, i).
+// The lottery seed is a Poseidon fold over the context and all included
+// nonces:
+// seed_0 = Poseidon(disputeId, finalStateRoot)
+// seed_{i+1} = Poseidon(seed_i, nonce_i)
+// Each draw is the low 32 bits of Poseidon(seed, i).
 // Voter i wins the lottery if:
 // draw_i * rhoTau < expectedScaled_i * 2^32
 //
-// The fixed-budget allocation score is scale + win_i * rhoTau. The scale-sized
-// baseline keeps the total allocation denominator nonzero and gives an equal
-// fallback when there are no lottery winners. Payouts 0..N-2 are floor(
-// rewardBudget * score_i / sum(score)); payout N-1 receives the deterministic
-// rounding residue so sum(payouts) equals rewardBudget exactly.
+// The fixed-budget allocation score is active_i * scale + win_i * rhoTau, where
+// active_i is implied by stake_i > 0. The scale-sized baseline keeps the total
+// allocation denominator nonzero for active voters and gives an equal fallback
+// when there are no lottery winners. Zero-stake padding leaves receive score 0.
+// Payouts 0..N-2 are floor(rewardBudget * score_i / sum(score)); payout N-1
+// receives the deterministic rounding residue so sum(payouts) equals
+// rewardBudget exactly.
 //
 // Each reward sidecar leaf is:
 // Poseidon(maciStateIndex_i, voterId_i, report_i, nonceCommitment_i, stake_i, recipient_i).
@@ -94,6 +99,7 @@ template RewardCheck(N, DEPTH, NBITS, LOTTERY_BITS) {
     component expectedRange[N];
     component remainderRange[N];
     component allocationRemainderRange[N];
+    component stakeZero[N];
     component smoothingRange = Num2Bits(32);
     component kappaRange = Num2Bits(32);
     component scaleRange = Num2Bits(32);
@@ -115,6 +121,8 @@ template RewardCheck(N, DEPTH, NBITS, LOTTERY_BITS) {
         reports[i] * (reports[i] - 1) === 0;
         stakeRange[i] = Num2Bits(32);
         stakeRange[i].in <== stakes[i];
+        stakeZero[i] = IsZero();
+        stakeZero[i].in <== stakes[i];
         payoutRange[i] = Num2Bits(64);
         payoutRange[i].in <== payouts[i];
         recipientRange[i] = Num2Bits(160);
@@ -177,6 +185,9 @@ template RewardCheck(N, DEPTH, NBITS, LOTTERY_BITS) {
     signal lotteryLhs[N];
     signal lotteryRhs[N];
     signal win[N];
+    signal active[N];
+    signal allocationBaselineScore[N];
+    signal allocationLotteryScore[N];
     signal allocationScore[N];
     signal totalAllocationScore;
     signal allocationNumerator[N];
@@ -186,18 +197,24 @@ template RewardCheck(N, DEPTH, NBITS, LOTTERY_BITS) {
 
     component remBound[N];
     component expectedLeRhoTau[N];
-    component seedHash = Poseidon(N + 2);
+    component seedHash[N + 1];
     component drawHash[N];
     component drawBits[N];
     component lotteryBound[N];
     component allocationRemBound[N];
 
+    signal seedAcc[N + 1];
+    seedHash[0] = Poseidon(2);
+    seedHash[0].inputs[0] <== disputeId;
+    seedHash[0].inputs[1] <== finalStateRoot;
+    seedAcc[0] <== seedHash[0].out;
     for (var i = 0; i < N; i++) {
-        seedHash.inputs[i] <== nonces[i];
+        seedHash[i + 1] = Poseidon(2);
+        seedHash[i + 1].inputs[0] <== seedAcc[i];
+        seedHash[i + 1].inputs[1] <== nonces[i];
+        seedAcc[i + 1] <== seedHash[i + 1].out;
     }
-    seedHash.inputs[N] <== disputeId;
-    seedHash.inputs[N + 1] <== finalStateRoot;
-    seed <== seedHash.out;
+    seed <== seedAcc[N];
 
     var totalAllocationScoreExpr = 0;
     var payoutSumExpr = 0;
@@ -256,7 +273,10 @@ template RewardCheck(N, DEPTH, NBITS, LOTTERY_BITS) {
         lotteryBound[i].in[1] <== lotteryRhs[i];
         win[i] <== lotteryBound[i].out;
 
-        allocationScore[i] <== scale + win[i] * rhoTau;
+        active[i] <== 1 - stakeZero[i].out;
+        allocationBaselineScore[i] <== active[i] * scale;
+        allocationLotteryScore[i] <== win[i] * rhoTau;
+        allocationScore[i] <== allocationBaselineScore[i] + allocationLotteryScore[i];
         totalAllocationScoreExpr += allocationScore[i];
         payoutSumExpr += payouts[i];
     }

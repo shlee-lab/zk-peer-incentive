@@ -200,9 +200,12 @@ import path from "path";
 const PROJECT_ROOT = ${JSON.stringify(projectRoot)};
 const POC_ROOT = path.join(PROJECT_ROOT, "poc");
 const OUTPUT_ROOT = process.env.FULL_MACI_REWARD_OUTPUT_ROOT || path.join(POC_ROOT, "artifacts/full_maci_reward");
+const EVALUATION_LATEST_FILE = path.join(PROJECT_ROOT, "experiments/reward-evaluation/data/full_maci_reward_anvil_latest.json");
 const FIELD_PRIME = 21888242871839275222246405745257275088548364400416034343698204186575808495617n;
 const REPORTS = [1, 0, 1, 1, 0, 0, 1, 0];
 const STAKES = ["10", "10", "10", "10", "10", "10", "10", "10"];
+const rewardDeployments: Record<string, { address: string; tx?: string; gas?: string }> = {};
+const rewardTransactions: Record<string, { tx: string; gas: string }> = {};
 
 function deterministicCommandSalt(index: number): bigint {
   return BigInt(ethers.id(\`zk-peer-full-maci-command-salt-\${index}\`)) % FIELD_PRIME;
@@ -231,12 +234,21 @@ async function deployRewardContract(label: string, signer: Signer, contractFile:
   const deployment = await contract.deploymentTransaction()?.wait();
   const address = await contract.getAddress();
   console.log(\`\${label}: address=\${address} tx=\${deployment?.hash} gas=\${deployment?.gasUsed.toString()}\`);
+  rewardDeployments[label] = {
+    address,
+    tx: deployment?.hash,
+    gas: deployment?.gasUsed.toString(),
+  };
   return contract;
 }
 
 async function waitTx(label: string, tx: any) {
   const receipt = await tx.wait();
   console.log(\`\${label}: tx=\${receipt.hash} gas=\${receipt.gasUsed.toString()}\`);
+  rewardTransactions[label] = {
+    tx: receipt.hash,
+    gas: receipt.gasUsed.toString(),
+  };
   return receipt;
 }
 
@@ -458,6 +470,7 @@ describe("full MACI plus reward sidecar E2E", function test() {
     fs.writeFileSync(sidecarFile, JSON.stringify(sidecar, null, 2));
     generateRewardProof(sidecarFile, rewardOutDir, fixtureFile);
     const fixture = readJson(fixtureFile);
+    const rewardSummary = readJson(path.join(rewardOutDir, "summary.json"));
 
     const disputeId = BigInt(fixture.disputeId);
     const finalRewardStateRoot = BigInt(fixture.finalStateRoot);
@@ -512,6 +525,55 @@ describe("full MACI plus reward sidecar E2E", function test() {
     expect(claimant).to.eq(fixture.recipients[claimIndex]);
     const claimable = await pool.claimable(disputeId, claimant);
     await waitTx("reward.claim", await pool.connect(userSigners[claimIndex]).claim(disputeId));
+    const poolBalanceAfterSampleClaim = await signer.provider!.getBalance(poolAddress);
+    const evaluationRecord = {
+      chainId: network.chainId.toString(),
+      maciAddress: maciAddresses.maciContractAddress,
+      maciTally: {
+        option0: tallyData.results.tally[0],
+        option1: tallyData.results.tally[1],
+        totalSpentVoiceCredits: tallyData.totalSpentVoiceCredits.spent,
+      },
+      reports: extractedReports,
+      stakeDesign: "uniform",
+      stakes: STAKES,
+      rewardMode: "fixed-budget lottery",
+      rhoTau: "3000000",
+      lotteryWins: rewardSummary.lotteryWins,
+      finalRewardStateRoot: fixture.finalStateRoot,
+      rewardNonceSource: "maci-vote-command-salt",
+      rewardBudget: sidecar.rewardBudget,
+      payouts: fixture.amounts,
+      paidRecipientIndices: fixture.amounts
+        .map((amount: string, index: number) => (BigInt(amount) > 0n ? index : -1))
+        .filter((index: number) => index >= 0),
+      totalPayout: fixture.totalPayout,
+      sampleClaimIndex: claimIndex,
+      sampleClaimant: claimant,
+      sampleClaimableBefore: claimable.toString(),
+      poolBalanceAfterSampleClaim: poolBalanceAfterSampleClaim.toString(),
+      proofTimesMs: {
+        maci: maciProofMs,
+        reward: fixture.proofGenerationMs,
+      },
+      rewardGas: {
+        registerFinalState: Number(rewardTransactions["reward.registerFinalState"].gas),
+        fundDispute: Number(rewardTransactions["reward.fundDispute"].gas),
+        finalizeRewards: Number(rewardTransactions["reward.finalizeRewards"].gas),
+        claim: Number(rewardTransactions["reward.claim"].gas),
+      },
+      rewardDeployGas: Object.fromEntries(
+        Object.entries(rewardDeployments).map(([label, value]) => [label, Number(value.gas)]),
+      ),
+      rewardTxHashes: {
+        ...Object.fromEntries(
+          Object.entries(rewardDeployments).map(([label, value]) => [\`\${label}Deploy\`, value.tx]),
+        ),
+        ...Object.fromEntries(Object.entries(rewardTransactions).map(([label, value]) => [label, value.tx])),
+      },
+    };
+    fs.mkdirSync(path.dirname(EVALUATION_LATEST_FILE), { recursive: true });
+    fs.writeFileSync(EVALUATION_LATEST_FILE, JSON.stringify(evaluationRecord, null, 2));
 
     console.log(\`maciProofMs=\${maciProofMs}\`);
     console.log(\`rewardProofMs=\${fixture.proofGenerationMs}\`);
@@ -523,7 +585,8 @@ describe("full MACI plus reward sidecar E2E", function test() {
     console.log(\`claimIndex=\${claimIndex}\`);
     console.log(\`claimant=\${claimant}\`);
     console.log(\`claimableBefore=\${claimable.toString()}\`);
-    console.log(\`poolBalanceAfter=\${(await signer.provider!.getBalance(poolAddress)).toString()}\`);
+    console.log(\`poolBalanceAfter=\${poolBalanceAfterSampleClaim.toString()}\`);
+    console.log(\`evaluationLatest=\${EVALUATION_LATEST_FILE}\`);
   });
 });
 `;

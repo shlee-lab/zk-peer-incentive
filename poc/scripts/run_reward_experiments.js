@@ -16,6 +16,14 @@ const DEFAULT_STAKES = Array.from({ length: N }, () => 10n);
 const DEFAULT_BUDGET = 3_000_000n;
 const DEFAULT_RHO_TAU = 3_000_000n;
 const LOTTERY_SAMPLE_COUNT = 64;
+const LOTTERY_CI_SAMPLE_COUNT = Number(process.env.REWARD_LOTTERY_CI_SAMPLES || 512);
+const FULL_MACI_E2E_FILE = path.join(DATA_DIR, "full_maci_reward_anvil_latest.json");
+const DEFAULT_REWARD_GAS = {
+  registerFinalState: 93_334,
+  fundDispute: 47_396,
+  finalizeRewards: 671_978,
+  claim: 30_684,
+};
 
 function fieldElement(label) {
   return BigInt(`0x${crypto.createHash("sha256").update(label).digest("hex")}`) % FIELD_PRIME;
@@ -56,6 +64,35 @@ function decimal(num, den, digits = 6) {
 
 function decimalFromNumber(value, digits = 6) {
   return value.toFixed(digits);
+}
+
+function readJsonIfExists(file) {
+  if (!fs.existsSync(file)) return null;
+  return JSON.parse(fs.readFileSync(file, "utf8"));
+}
+
+function percentile(values, p) {
+  if (values.length === 0) return 0;
+  const sorted = [...values].sort((a, b) => a - b);
+  const index = (sorted.length - 1) * p;
+  const lo = Math.floor(index);
+  const hi = Math.ceil(index);
+  if (lo === hi) return sorted[lo];
+  const weight = index - lo;
+  return sorted[lo] * (1 - weight) + sorted[hi] * weight;
+}
+
+function mean(values) {
+  if (values.length === 0) return 0;
+  return values.reduce((acc, value) => acc + value, 0) / values.length;
+}
+
+function standardDeviation(values) {
+  if (values.length < 2) return 0;
+  const m = mean(values);
+  const variance =
+    values.reduce((acc, value) => acc + (value - m) * (value - m), 0) / (values.length - 1);
+  return Math.sqrt(variance);
 }
 
 function median(values) {
@@ -278,14 +315,188 @@ async function runRewardTable(profiles) {
   return rows;
 }
 
+async function runLotteryConfidence(profiles) {
+  const rows = [];
+  for (const profile of profiles) {
+    for (const kappa of [0n, 1n, 5n, 10n, 25n, 50n, 100n]) {
+      const common = baseInputs(profile);
+      const peerMatches = profile.reports.map((report, index) =>
+        report === profile.reports[common.peerIndices[index]] ? 1 : 0
+      );
+      const maxPayoutShares = [];
+      const peerMatchPayoutShares = [];
+      const winnerCounts = [];
+      for (let sample = 0; sample < LOTTERY_CI_SAMPLE_COUNT; sample += 1) {
+        const allocation = await computeFixedBudgetLotteryPayouts({
+          ...common,
+          ...lotteryContext({ name: `${profile.name}-ci` }, sample),
+          smoothing: 1n,
+          kappa,
+          rewardBudget: DEFAULT_BUDGET,
+        });
+        const stats = payoutStats(allocation);
+        const peerMatchPayout = allocation.payouts.reduce(
+          (acc, payout, index) => acc + (peerMatches[index] === 1 ? payout : 0n),
+          0n
+        );
+        maxPayoutShares.push(Number(stats.maxPayout) / Number(DEFAULT_BUDGET));
+        peerMatchPayoutShares.push(Number(peerMatchPayout) / Number(DEFAULT_BUDGET));
+        winnerCounts.push(allocation.wins.filter((win) => win === 1n).length);
+      }
+      rows.push({
+        profile: profile.name,
+        smoothing: "1",
+        kappa: kappa.toString(),
+        maxPayoutShareMean: decimalFromNumber(mean(maxPayoutShares), 6),
+        maxPayoutShareStdErr: decimalFromNumber(
+          standardDeviation(maxPayoutShares) / Math.sqrt(maxPayoutShares.length),
+          6
+        ),
+        maxPayoutShareCiLow: decimalFromNumber(
+          Math.max(
+            0,
+            mean(maxPayoutShares) -
+              1.96 * standardDeviation(maxPayoutShares) / Math.sqrt(maxPayoutShares.length)
+          ),
+          6
+        ),
+        maxPayoutShareCiHigh: decimalFromNumber(
+          Math.min(
+            1,
+            mean(maxPayoutShares) +
+              1.96 * standardDeviation(maxPayoutShares) / Math.sqrt(maxPayoutShares.length)
+          ),
+          6
+        ),
+        maxPayoutShareP05: decimalFromNumber(percentile(maxPayoutShares, 0.05), 6),
+        maxPayoutShareP50: decimalFromNumber(percentile(maxPayoutShares, 0.50), 6),
+        maxPayoutShareP95: decimalFromNumber(percentile(maxPayoutShares, 0.95), 6),
+        peerMatchPayoutShareMean: decimalFromNumber(mean(peerMatchPayoutShares), 6),
+        peerMatchPayoutShareP05: decimalFromNumber(percentile(peerMatchPayoutShares, 0.05), 6),
+        peerMatchPayoutShareP95: decimalFromNumber(percentile(peerMatchPayoutShares, 0.95), 6),
+        winnerCountMean: decimalFromNumber(mean(winnerCounts), 6),
+        winnerCountP05: decimalFromNumber(percentile(winnerCounts, 0.05), 6),
+        winnerCountP95: decimalFromNumber(percentile(winnerCounts, 0.95), 6),
+        samples: LOTTERY_CI_SAMPLE_COUNT,
+        reports: profile.reports.join(""),
+      });
+    }
+  }
+  return rows;
+}
+
+function writeE2EOverhead() {
+  const latest = readJsonIfExists(FULL_MACI_E2E_FILE) || {};
+  const proofTimes = latest.proofTimesMs || {};
+  const rewardGas = latest.rewardGas || DEFAULT_REWARD_GAS;
+  writeCsv(path.join(DATA_DIR, "gas_breakdown.csv"), [
+    { operation: "register", gas: rewardGas.registerFinalState },
+    { operation: "fund", gas: rewardGas.fundDispute },
+    { operation: "finalize", gas: rewardGas.finalizeRewards },
+    { operation: "claim", gas: rewardGas.claim },
+  ]);
+  const rows = [
+    {
+      section: "proof_time",
+      metric: "MACI proof phase",
+      value: proofTimes.maci ? (proofTimes.maci / 1000).toFixed(3) : "",
+      unit: "seconds",
+      source: "full_maci_reward_anvil_latest",
+    },
+    {
+      section: "proof_time",
+      metric: "Reward proof phase",
+      value: proofTimes.reward ? (proofTimes.reward / 1000).toFixed(3) : "",
+      unit: "seconds",
+      source: "full_maci_reward_anvil_latest",
+    },
+    {
+      section: "reward_gas",
+      metric: "Register root",
+      value: rewardGas.registerFinalState,
+      unit: "gas",
+      source: "full_maci_reward_anvil_latest",
+    },
+    {
+      section: "reward_gas",
+      metric: "Fund pool",
+      value: rewardGas.fundDispute,
+      unit: "gas",
+      source: "full_maci_reward_anvil_latest",
+    },
+    {
+      section: "reward_gas",
+      metric: "Verify + finalize",
+      value: rewardGas.finalizeRewards,
+      unit: "gas",
+      source: "full_maci_reward_anvil_latest",
+    },
+    {
+      section: "reward_gas",
+      metric: "Claim",
+      value: rewardGas.claim,
+      unit: "gas",
+      source: "full_maci_reward_anvil_latest",
+    },
+  ];
+  writeCsv(path.join(DATA_DIR, "e2e_overhead.csv"), rows);
+}
+
+function writeOperatingCostProjection() {
+  const latest = readJsonIfExists(FULL_MACI_E2E_FILE) || {};
+  const rewardGas = latest.rewardGas || DEFAULT_REWARD_GAS;
+  const measuredN = 8;
+  const perRecipientFinalizeGas = 22_000;
+  const finalizeBaseGas = Math.max(
+    0,
+    Number(rewardGas.finalizeRewards) - perRecipientFinalizeGas * measuredN
+  );
+  const ethUsd = 3000;
+  const networks = [
+    { network: "Ethereum L1", gasPriceGwei: 20 },
+    { network: "Arbitrum execution", gasPriceGwei: 0.1 },
+  ];
+  const voterCounts = [10, 100, 1000];
+  const rows = [];
+  for (const { network, gasPriceGwei } of networks) {
+    for (const voters of voterCounts) {
+      const finalizeGas = finalizeBaseGas + perRecipientFinalizeGas * voters;
+      const adminGas = Number(rewardGas.registerFinalState) + Number(rewardGas.fundDispute) + finalizeGas;
+      const allClaimGas = Number(rewardGas.claim) * voters;
+      const totalGas = adminGas + allClaimGas;
+      const ethCost = totalGas * gasPriceGwei * 1e-9;
+      rows.push({
+        network,
+        voters,
+        gasPriceGwei,
+        ethUsd,
+        registerGas: rewardGas.registerFinalState,
+        fundGas: rewardGas.fundDispute,
+        finalizeBaseGas,
+        perRecipientFinalizeGas,
+        finalizeGas,
+        claimGasPerRecipient: rewardGas.claim,
+        allClaimGas,
+        adminGas,
+        totalOperationalGas: totalGas,
+        totalEth: ethCost.toFixed(8),
+        totalUsd: (ethCost * ethUsd).toFixed(2),
+        note: "deployment excluded; Arbitrum row is execution-gas-only illustrative model",
+      });
+    }
+  }
+  writeCsv(path.join(DATA_DIR, "operating_cost_projection.csv"), rows);
+}
+
 function writeProofShape() {
   writeCsv(path.join(DATA_DIR, "proof_shape.csv"), [
     { metric: "voters", value: 8 },
     { metric: "merkle_depth", value: 3 },
     { metric: "public_inputs", value: 31 },
     { metric: "private_inputs", value: 88 },
-    { metric: "constraints", value: 23786 },
+    { metric: "constraints", value: 25512 },
     { metric: "allocation_mode", value: "fixed_budget_lottery" },
+    { metric: "seed_mode", value: "poseidon_fold" },
   ]);
 }
 
@@ -318,11 +529,15 @@ async function main() {
   const allocationRows = await runBudgetAllocation(profiles[0]);
   const concentrationRows = await runStakeConcentration(profiles[0]);
   const rewardRows = await runRewardTable(profiles);
+  const lotteryConfidenceRows = await runLotteryConfidence(profiles);
 
   writeCsv(path.join(DATA_DIR, "parameter_sweep.csv"), sweepRows);
   writeCsv(path.join(DATA_DIR, "budget_allocation.csv"), allocationRows);
   writeCsv(path.join(DATA_DIR, "stake_concentration.csv"), concentrationRows);
   writeCsv(path.join(DATA_DIR, "reward_sensitivity.csv"), rewardRows);
+  writeCsv(path.join(DATA_DIR, "lottery_confidence.csv"), lotteryConfidenceRows);
+  writeE2EOverhead();
+  writeOperatingCostProjection();
   writeProofShape();
   writeJson(path.join(DATA_DIR, "experiment_manifest.json"), {
     generatedAt: new Date().toISOString(),
@@ -333,6 +548,7 @@ async function main() {
     lotteryMode: "fixed-budget lottery; winners are sampled by Poseidon(seed, i), then payouts are normalized to rewardBudget",
     rhoTau: DEFAULT_RHO_TAU.toString(),
     lotterySamples: LOTTERY_SAMPLE_COUNT,
+    lotteryConfidenceSamples: LOTTERY_CI_SAMPLE_COUNT,
     stakeDesign: "uniform stakes for report-pattern experiments; stake effects are isolated in stake_concentration.csv",
     sweepRows: sweepRows.length,
     allocationRows: allocationRows.length,
@@ -344,8 +560,10 @@ async function main() {
     notes: [
       "Payouts are normalized to a fixed reward budget; total payout equals rewardBudget.",
       "Reward sensitivity is plotted as average max_i P_i / rewardBudget over deterministic lottery samples.",
+      "Lottery confidence data reports 5th, 50th, and 95th percentile bands over deterministic lottery samples.",
       "A scale-sized allocation baseline keeps the denominator nonzero for all-zero-score profiles.",
-      "Circuit and contract remain fixed at N=8 for this PoC.",
+      "Lottery seed uses a Poseidon fold over poll id, final reward root, and included nonces.",
+      "The integrated MACI/reward flow remains fixed at N=8; capacity-utilization data is generated separately with N_max=64.",
     ],
   });
 

@@ -1,0 +1,5 @@
+maxVoters,activeVoters,utilization,merkleDepth,publicInputs,privateInputs,constraints,wires,labels,compileMs,witnessMs,setupMs,exportVkMs,proveMs,verifyMs,proveMsPerActiveVoter,totalPayout,paidRecipientCount,winnerCount,artifactDir,verifyOutput
+64,8,0.125000,6,199,896,247824,247891,635504,17095,529,243662,598,11298,556,1412,3000000,8,3,poc/artifacts/scaling/max64/active8,OK
+64,16,0.250000,6,199,896,247824,247891,635504,17095,482,243662,598,11462,552,716,3000000,16,4,poc/artifacts/scaling/max64/active16,OK
+64,32,0.500000,6,199,896,247824,247891,635504,17095,423,243662,598,10918,539,341,3000000,32,6,poc/artifacts/scaling/max64/active32,OK
+64,64,1.000000,6,199,896,247824,247891,635504,17095,441,243662,598,12633,645,197,3000000,64,12,poc/artifacts/scaling/max64/active64,OK
