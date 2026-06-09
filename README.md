@@ -192,6 +192,15 @@ using the measured gas model. Deployment is excluded. The Arbitrum row is an
 execution-gas-only illustrative model, so it should be read as a scenario rather
 than a live fee quote.
 
+| Claimants | Ethereum L1, 20 gwei | Arbitrum execution, 0.1 gwei |
+| ---: | ---: | ---: |
+| 10 | `$69.81` | `$0.35` |
+| 100 | `$354.31` | `$1.77` |
+| 1000 | `$3,199.24` | `$16.00` |
+
+Assumptions: ETH at `$3,000`, deployment excluded, one finalization, and every
+recipient claims once.
+
 ![Operating cost projection](experiments/reward-evaluation/figures/operating_cost_projection.png)
 
 The same figures are also exported as vector PDFs for paper or slide use. More

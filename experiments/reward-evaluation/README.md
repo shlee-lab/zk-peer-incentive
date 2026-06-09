@@ -133,6 +133,14 @@ deployment and uses fixed scenario prices: 20 gwei on L1, 0.1 gwei for an
 Arbitrum execution-only row, and ETH at `$3,000`. It is not a live fee quote;
 it is a scale-of-cost comparison.
 
+| Claimants | Ethereum L1, 20 gwei | Arbitrum execution, 0.1 gwei |
+| ---: | ---: | ---: |
+| 10 | `$69.81` | `$0.35` |
+| 100 | `$354.31` | `$1.77` |
+| 1000 | `$3,199.24` | `$16.00` |
+
+The table assumes one reward finalization and one claim per recipient.
+
 ## Data Files
 
 - `parameter_sweep.csv`: wider parameter sweep over report profiles, smoothing,
