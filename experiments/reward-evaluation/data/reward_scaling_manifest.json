@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-06-09T09:04:00.353Z",
+  "generatedAt": "2026-06-13T03:37:36.787Z",
   "maxVoters": 64,
   "activeVoterCounts": [
     8,
@@ -8,6 +8,7 @@
     64
   ],
   "ptau": "/tmp/maci-official/zkeys/powersOfTau28_hez_final_19.ptau",
-  "relation": "fixed-capacity reward circuit utilization with Poseidon-fold lottery seed",
+  "relation": "fixed-capacity coordinate-wise Bernoulli reward circuit utilization",
+  "gammaScaled": "214748364",
   "note": "Artifacts are generated under poc/artifacts/scaling and are intentionally gitignored."
 }

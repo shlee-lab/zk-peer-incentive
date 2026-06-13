@@ -69,6 +69,9 @@ function main() {
   expectWitnessFailure("out_of_range_reward_budget", (input) => {
     input.rewardBudget = (1n << 64n).toString();
   });
+  expectWitnessFailure("out_of_range_gamma", (input) => {
+    input.gammaScaled = (1n << 31n).toString();
+  });
   expectWitnessFailure("out_of_range_rho_tau", (input) => {
     input.rhoTau = (1n << 64n).toString();
   });
@@ -77,6 +80,15 @@ function main() {
   });
   expectWitnessFailure("tampered_rho_tau", (input) => {
     input.rhoTau = (BigInt(input.rhoTau) - 1n).toString();
+  });
+  expectWitnessFailure("tampered_gamma", (input) => {
+    input.gammaScaled = "300000000";
+  });
+  expectWitnessFailure("tampered_random_seed", (input) => {
+    input.randomSeed = (BigInt(input.randomSeed) + 1n).toString();
+  });
+  expectWitnessFailure("tampered_raw_threshold", (input) => {
+    input.rawThresholds[0] = (BigInt(input.rawThresholds[0]) + 1n).toString();
   });
   expectWitnessFailure("tampered_payout", (input) => {
     input.payouts[0] = (BigInt(input.payouts[0]) + 1n).toString();

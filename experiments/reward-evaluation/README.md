@@ -1,113 +1,118 @@
 # Reward Evaluation
 
-This directory contains reproducible data and paper-style figures for the
-experimental MACI reward sidecar.
+This directory contains the data and figures used to describe the experimental
+MACI reward sidecar. The current implementation is a coordinate-wise Bernoulli
+lottery reward rule bound to a MACI-derived reward state root. The older
+exact-budget allocation mode is retained only as a comparison baseline.
 
-The evaluation shows feasibility and mechanism behavior for the integrated
-`N = 8` prototype, plus a fixed-capacity reward-circuit utilization experiment
-at `N_max = 64`: a real MACI local run, a reward proof, on-chain reward
-finalization, and small parameter studies around the single peer-prediction
-reward rule.
-
-## Evaluation Goal
-
-The prototype claim is:
-
-```text
-Official MACI can run a private local voting flow, and a separate reward proof
-can bind hidden binary reports to a MACI-derived reward state root, verify
-fixed-budget lottery peer-prediction payouts, and finalize claimable rewards
-on-chain.
-```
-
-The experiments support that claim from three angles. First, the Anvil record
-shows that official MACI and the reward sidecar run together end to end. Second,
-the reward-rule figures separate report-pattern behavior from stake behavior:
-report-pattern experiments use equal stakes, while the stake-concentration
-figure is the only one that changes stake. Third, the gas figure isolates the
-reward-layer on-chain cost.
+The evaluation supports a narrow claim: official MACI can run a local encrypted
+voting flow, and a separate Groth16 reward proof can bind hidden binary reports
+to a reward state root, verify lottery payouts, and finalize claimable rewards
+on Anvil.
 
 ## Reader Questions
 
 | Reader question | Matching artifact | What it answers |
 | --- | --- | --- |
-| Does the full system run locally with real MACI? | `data/full_maci_reward_anvil_latest.json` | Shows official MACI deployment, voter signup, encrypted votes, MACI proofs, reward proof, finalization, and one claim on Anvil. |
-| How much overhead does the reward sidecar add? | `figures/e2e_overhead.pdf` | Compares MACI proof time, reward proof time, and reward-layer gas in the same Anvil run. |
-| Does the single peer-prediction rule behave sensibly across report patterns? | `figures/reward_sensitivity.pdf` and `figures/lottery_confidence.pdf` | Shows how the largest final payout share changes with the reward scale, including a 512-sample confidence run. |
-| Does payout preserve the configured total budget? | `figures/budget_allocation.pdf` | Shows one per-voter fixed-budget lottery payout vector for the MACI-derived profile on a log y-axis. |
-| How do public stakes affect incentives? | `figures/stake_concentration.pdf` | Increases one voter's stake and compares that voter's average fixed-budget lottery payout with the average of the others. |
-| What are the reward-specific gas costs? | `figures/cost_profile.pdf` | Separates root registration, pool funding, proof verification plus finalization, and recipient claim. |
-| How much capacity is wasted when a max-size reward circuit is underfilled? | `figures/reward_scaling.pdf` | Uses one `N_max = 64` reward circuit and varies active voters across `8, 16, 32, 64`. |
-| What does operation cost look like at larger dispute sizes? | `figures/operating_cost_projection.pdf` | Projects reward-layer operating cost for 10, 100, and 1000 claimants under fixed gas-price scenarios. |
-| What public payout exposure does one hidden report have? | `data/exposure_sanity.csv` | Flips one report at a time and counts changed public payout coordinates. |
+| Does the full system run locally with real MACI? | `data/full_maci_reward_anvil_latest.json` | Official MACI deployment, signup, encrypted votes, MACI proofs, reward proof, finalization, and one claim. |
+| How much overhead does the reward sidecar add? | `figures/e2e_overhead.pdf` | MACI proof time, reward proof time, and reward-layer gas from one Anvil run. |
+| Does the reward rule react to report patterns? | `figures/reward_sensitivity.pdf`, `figures/lottery_confidence.pdf` | How lottery concentration changes as `kappa` changes. |
+| How much can one hidden report move public probabilities? | `data/exposure_probability_sanity.csv` | Per-coordinate changes in `q_j` after flipping one report. |
+| How visible is one report across repeated rounds? | `figures/attack_simulation.pdf` | Likelihood-ratio distinguishing advantage for two worlds differing in one report. |
+| What is the reward-layer gas cost? | `figures/cost_profile.pdf` | Seed commit, root registration, seed reveal, pool funding, proof finalization, and claim gas. |
+| What happens with a larger max-size reward circuit? | `figures/reward_scaling.pdf` | Standalone `N_max = 64` capacity experiment. |
 
-## Public Transcript Privacy Notes
+## Theory-To-Prototype Mapping
 
-The paper-level privacy object is the public reward transcript, not a single
-recipient's payout. In this prototype the transcript includes the public payout
-vector, verifier public inputs, reward finalization transaction data, claimable
-balances, and other on-chain reward contract state.
+| Term | Meaning | Prototype status |
+| --- | --- | --- |
+| `rho_tau` / `rhoTau` | Per-coordinate payout amount and reward cap scale. A winner receives exactly `rhoTau`; a loser receives `0`. | Implemented as a public circuit input and contract public signal. |
+| `gamma` / `gammaScaled` | Lower and upper lottery-probability clamp. The circuit enforces `q_i in [gamma, 1-gamma]`. | Implemented as public `gammaScaled = floor(gamma * 2^32)`. Current integrated run uses `gamma = 0.05`. |
+| `eta` | Target distinguishability for the whole public reward transcript. | Design parameter. The prototype measures attack advantage but does not enforce a chosen `eta`. |
+| `D` | Number of public payout coordinates affected by one hidden report. | Direct ring exposure is `D_graph = 2`; measured probability exposure includes smaller second-order effects across more coordinates. |
+| `eta / D` | Coordinate-level leakage target when the transcript budget is split across affected coordinates. | Design guidance only. The data reports actual `q_j` movement so the paper can choose a conservative correction. |
+| `kappa` | Reward scale. It controls how strongly peer agreement increases `x_i`, and therefore `q_i`. | Implemented as a public input and swept in experiments. |
+| `p_tilde` | Empirical frequency normalizer used by the inverse-frequency score. | Implemented as same-dispute leave-one-out, stake-weighted, smoothed plug-in normalizer. |
+| `rewardBudget B` | Expected-payout cap used by the circuit. It is not an exact final payout sum. | Implemented: circuit checks expected payout mass is at most `B`; contract funds maximum exposure separately. |
+| nonce source | Private material bound into the reward sidecar leaf. | Experimental. Full MACI flow derives it from MACI vote command salts. |
+| lottery seed source | Public randomness used for Bernoulli draws. | Experimental commit-reveal: seed is committed before root registration and revealed after root registration. |
+| public inputs | Values visible to verifier and contract. | `payouts`, `recipients`, `stakes`, `smoothing`, `kappa`, `scale`, `rhoTau`, `disputeId`, `finalStateRoot`, `rewardBudget`, `gammaScaled`, `randomSeed`. |
+| private inputs | Witness values hidden by the proof. | reports, nonces, MACI state indices, voter ids, nonce commitments, Merkle paths, expected scores, raw thresholds, and division remainders. |
 
-The implementation uses ring peer matching:
+## Reward Semantics
+
+The active reward rule is independent per coordinate:
+
+```text
+x_i         = smoothed inverse-frequency peer-agreement score
+q_i         = clamp(x_i / rhoTau, gamma, 1 - gamma)
+u_i         = low32(Poseidon(seed, i))
+payout_i    = rhoTau if u_i < q_i * 2^32, otherwise 0
+```
+
+The proof enforces the clamp and threshold comparison inside the circuit. The
+public payout vector must therefore contain only `0` and `rhoTau`.
+
+The per-coordinate draws are separated as `Poseidon(seed, i)`; the independence
+claim here is computational pseudorandomness, not statistical independence.
+
+The total payout is random. The integrated run funds the pool for maximum
+exposure:
+
+```text
+N * rhoTau = 8 * 3,000,000 = 24,000,000
+```
+
+The expected-payout budget is a cap on probability mass. With
+`gamma = 0.05`, the gamma floor alone contributes:
+
+```text
+N * gamma * rhoTau = 8 * 0.05 * 3,000,000 = 1,200,000
+```
+
+The fixed-budget data files and figure remain because they are useful as a
+baseline for comparing exact-budget allocation with low-exposure Bernoulli
+lottery payouts. They should not be cited as the current contract behavior.
+
+## Public Transcript Exposure
+
+The paper-level privacy object is the full public reward transcript: payout
+vector, verifier public inputs, finalization transaction data, claimable
+balances, and on-chain reward state.
+
+The peer graph is a ring:
 
 ```text
 peer_i = (i + 1) mod N
 ```
 
-Changing voter `t`'s hidden report directly affects the peer-agreement test for
-voter `t`, and for any voter that uses `t` as its peer. In the ring graph there
-is exactly one such predecessor, `(t - 1) mod N`, so the direct peer-graph
+Changing voter `t` directly affects voter `t`'s own agreement test and the
+predecessor `(t - 1) mod N` that uses `t` as a peer. That first-order graph
 exposure is:
 
 ```text
 D_graph = 2
-directly affected coordinates: {t, (t - 1) mod N}
 ```
 
-The current public payout vector has a larger conservative exposure. The
-same-dispute leave-one-out normalizer can change score denominators for other
-voters, the fixed-budget allocation normalizes every payout by the same total
-allocation score, and the current lottery seed includes `finalRewardStateRoot`.
-Because a report flip changes that root, it can also resample lottery draws.
-For the integrated `N = 8` prototype, the documented transcript exposure degree
-is therefore:
+The same-dispute leave-one-out normalizer also changes other voters'
+probabilities. The script `poc/scripts/run_reward_experiments.js` flips each
+report and records the per-coordinate change in `q_j`. For the included
+profiles, the largest observed values are:
 
-```text
-D = 8
-```
+| gamma | Max direct `|Delta q|` | Max secondary `|Delta q|` |
+| ---: | ---: | ---: |
+| 0.02 | `0.96000000` | `0.20580666` |
+| 0.05 | `0.90000000` | `0.18882766` |
+| 0.10 | `0.80000000` | `0.18882766` |
 
-The exposure sanity CSV confirms this bound for the included profiles: the
-maximum observed `changedPayoutCount` is `8`. If a target transcript
-distinguishability budget is `eta`, the coordinate-level design target for this
-prototype should be read as approximately `eta / 8`. A future low-exposure
-variant would need to remove or localize the global normalizer, global
-fixed-budget denominator, or root-dependent lottery resampling before claiming
-the lower ring-graph value `D_graph = 2`.
+So the ring graph has bounded first-order exposure, but the current
+same-dispute normalizer creates measurable second-order transcript movement.
+The CSV gives the paper a data-backed alternative to simply treating all
+`N = 8` coordinates as equally affected.
 
-## Theory-To-Prototype Mapping
+## Normalizer Scope
 
-| Term | Meaning in the paper/prototype | Prototype status |
-| --- | --- | --- |
-| `rho_tau` / `rhoTau` | Maximum lottery allocation scale used before fixed-budget normalization. It is not an independent final payout cap because final payouts are normalized to `B`. | Implemented as a public circuit input and contract public signal. |
-| `eta` | Target distinguishability for the full public reward transcript. | Design parameter only; the prototype does not estimate or enforce `eta`. |
-| `D` | Maximum number of public payout coordinates affected by one hidden report. | Documented/measured as `D = 8` for the current `N = 8` public payout transcript; direct ring-graph exposure is `D_graph = 2`. |
-| `eta / D` | Coordinate-level leakage target when the transcript budget is split over affected payout coordinates. | Design guidance only; not enforced by code. |
-| `kappa` | Reward scale that controls how strongly peer agreement affects lottery eligibility. | Implemented as a public input; experiments sweep it. |
-| `p_tilde` | Empirical report-frequency normalizer used by the reward rule. | Approximated by a same-dispute leave-one-out, stake-weighted, smoothed plug-in normalizer. |
-| `rewardBudget B` | Fixed total budget distributed by the final payout vector. | Implemented as `rewardBudget`; circuit enforces `sum_i payout_i = B`. |
-| nonce source | Randomness input for lottery draws. | Experimental. The full MACI sidecar uses MACI vote command salts as nonce material; deterministic experiments use labeled Poseidon-derived nonces. Production randomness is out of scope. |
-| public inputs | Values visible to the verifier/contract. | Implemented: `payouts`, `recipients`, `stakes`, `smoothing`, `kappa`, `scale`, `rhoTau`, `disputeId`, `finalStateRoot`, and `rewardBudget`. |
-| private inputs | Witness values hidden by the proof. | Implemented: reports, nonces, MACI state indices, voter ids, nonce commitments, Merkle paths, expected-score witnesses, and division remainders. |
-
-## Reward Semantics And Normalization
-
-The reward rule is a fixed-budget lottery. The circuit first samples lottery
-winners from nonce-derived randomness, then converts winner indicators into
-allocation scores, and finally normalizes all public payouts to the fixed
-budget `B`. This is not a contract that independently pays `rhoTau` to every
-Bernoulli winner; `rhoTau` affects the pre-normalization allocation score.
-
-The frequency normalizer is same-dispute leave-one-out:
+The implementation uses same-dispute leave-one-out:
 
 ```text
 p_tilde_i(1) = (sum_{j != i} stake_j * report_j + smoothing)
@@ -115,144 +120,87 @@ p_tilde_i(1) = (sum_{j != i} stake_j * report_j + smoothing)
 p_tilde_i(0) = 1 - p_tilde_i(1)
 ```
 
-This is a practical plug-in normalizer for independent dispute questions, not a
-clean estimator of a universal report frequency across disputes. The formal
+This is a practical plug-in normalizer for independent dispute questions. It is
+not a clean estimator of a universal distribution across disputes. The formal
 incentive guarantee should be read conditionally: the chosen `p_tilde` must
-remain inside the paper's truthfulness interval `[beta, alpha]`.
+stay inside the truthfulness interval `[beta, alpha]`.
 
-Implemented safeguards are intentionally modest. The model and circuit use
-smoothing, denominator checks, bounded public input ranges, and the circuit
-checks that expected rewards do not exceed `rhoTau`. The prototype does not
-clip `p_tilde` into `[beta, alpha]`, does not learn a historical calibration
-distribution, and does not implement a production fallback policy.
+Implemented safeguards are smoothing, denominator checks, public-input range
+checks, gamma clamp checks, and an expected-payout cap. The prototype does not
+learn historical calibration, clip `p_tilde` into `[beta, alpha]`, or implement
+a production fallback policy.
 
-## Figure Interpretation
+## Figure Notes
 
-`e2e_overhead`
+`e2e_overhead` compares the MACI proof phase, reward proof phase, and reward gas
+operations from the same Anvil run. `Verify + finalize` is the largest reward
+operation because it verifies the Groth16 proof and records claimable payouts.
 
-This plot compares the full MACI proof phase with the reward proof phase, then
-shows the reward-layer gas operations from the same Anvil run. It is meant to
-answer the practical overhead question: the reward proof is small compared with
-MACI proving in this local setup, while reward finalization is the largest
-reward-layer transaction.
+`reward_sensitivity` sweeps `kappa`. Larger `kappa` means peer agreement has
+more influence on the lottery threshold. Equal stakes are used here, so changes
+come from reports, reward scale, and lottery sampling rather than stake
+weighting.
 
-`reward_sensitivity`
+`lottery_confidence` repeats the sensitivity run over 512 deterministic lottery
+samples and plots a confidence interval for the mean largest-payout share.
 
-This plot shows a final-payout quantity averaged over deterministic lottery
-seed samples. The y-axis is the largest single payout share:
+`attack_simulation` samples two worlds that differ only in one target report.
+For each `k = 1..50`, it draws `M = 10000` transcripts per world and evaluates
+the optimal likelihood-ratio classifier. The plotted theory curve is the
+clipped advantage expression
+`eta * sqrt(k / (2 gamma (1 - gamma))) / 2`. With the current high-signal
+parameters, both empirical and clipped theory curves reach the 50% ceiling.
 
-```text
-max_i P_i / B
-```
+`budget_allocation` is the legacy exact-budget baseline. It is kept to compare
+exact-budget and Bernoulli semantics, not to describe the current
+`IntegratedRewardPool` payout rule.
 
-where `B` is the fixed reward budget.
+`reward_scaling` is standalone. It compiles a max-size `N_max = 64` reward
+circuit and varies active inputs. Because the Bernoulli rule has a gamma floor,
+capacity planning must consider the max-size coordinate count, not only the
+number of nonzero-stake voters.
 
-`kappa` is the reward scale parameter. At `kappa = 0`, the peer-prediction score
-is disabled and the budget is split evenly. As `kappa` increases, peer-matching
-voters become more likely to win the lottery, so the fixed budget concentrates
-on sampled winners.
+## Current Measurement Snapshot
 
-The no-match profile stays at the equal baseline because no voter can win the
-lottery. Consensus can still concentrate in a given draw because everyone is
-eligible but only some voters are sampled as winners. Stakes are equal in this
-figure, so differences come from reports, reward scale, and lottery sampling
-rather than from stake weighting.
-
-`lottery_confidence`
-
-This plot repeats the reward-scale experiment over 512 deterministic lottery
-samples. The MACI-derived line includes a 95% confidence interval for the mean
-largest-payout share. The percentile data is also kept in
-`lottery_confidence.csv`, but the figure uses the mean confidence interval to
-avoid making a single lottery draw look more stable than it is.
-
-`budget_allocation`
-
-This is the easiest plot to read as "who gets paid in this lottery draw." `P_i`
-is the final payout for voter `i`, and the bars sum exactly to the configured
-reward budget.
-
-In the MACI-derived example, reports are:
+The latest synchronized full MACI + reward Anvil run was generated from the
+working tree based on commit `e8cf1a4` and produced:
 
 ```text
-voter:  0 1 2 3 4 5 6 7
-report: 1 0 1 1 0 0 1 0
-peer:   1 2 3 4 5 6 7 0
-match:  no no yes no yes no no no
+MACI proof phase: 124.084 s
+Reward proof phase: 4.618 s
+Reward circuit: 26,080 constraints, 33 public inputs, 96 private inputs
+Commit seed: 49,899 gas
+Register root: 98,837 gas
+Reveal seed: 58,248 gas
+Fund pool: 47,396 gas
+Verify + finalize: 557,212 gas
+Claim: 30,707 gas
 ```
 
-Only voter 2 and voter 4 match their assigned peer, so they are eligible for a
-large lottery-backed allocation. In the plotted seed, both voters win and split
-almost all of the fixed budget. The other voters receive only the small baseline
-payout. The y-axis is logarithmic because winner payouts are roughly three
-orders of magnitude larger than baseline payouts.
+The public payout vector in that run was:
 
-`stake_concentration`
-
-This plot changes voter 2's public stake while keeping the reports fixed and
-averaging over deterministic lottery seeds. Since voter 2 has a peer-agreement
-signal, increasing voter 2's stake increases voter 2's expected share of the
-fixed reward budget and reduces the average share left for the others.
-
-`cost_profile`
-
-This plot shows reward-layer gas only. `Register root` stores the final reward
-state root and MACI tally status. `Fund pool` deposits the reward budget.
-`Verify + finalize` verifies the Groth16 reward proof and records claimable
-balances, so it is the largest operation. `Claim` withdraws one recipient's
-already-finalized payout.
-
-`reward_scaling`
-
-This plot uses one generated `N_max = 64` reward circuit, not the integrated
-`N = 8` contract, and varies the number of active voters. Inactive slots are
-zero-stake padding leaves and receive no baseline payout. The plot shows that
-total proof time stays close to the fixed-capacity cost, while per-active voter
-time improves as utilization increases. The proving key setup time is stored in
-the CSV but omitted from the figure because setup is per circuit, not per
-dispute.
-
-`operating_cost_projection`
-
-This plot projects reward-layer operation cost from measured gas. It excludes
-deployment and uses fixed scenario prices: 20 gwei on L1, 0.1 gwei for an
-Arbitrum execution-only row, and ETH at `$3,000`. It is not a live fee quote;
-it is a scale-of-cost comparison.
-
-| Claimants | Ethereum L1, 20 gwei | Arbitrum execution, 0.1 gwei |
-| ---: | ---: | ---: |
-| 10 | `$69.81` | `$0.35` |
-| 100 | `$354.31` | `$1.77` |
-| 1000 | `$3,199.24` | `$16.00` |
-
-The table assumes one reward finalization and one claim per recipient.
+```text
+[0, 0, 3000000, 0, 0, 0, 0, 0]
+```
 
 ## Data Files
 
-- `parameter_sweep.csv`: wider parameter sweep over report profiles, smoothing,
-  scale, reward budget, and stake multiplier.
-- `reward_sensitivity.csv`: reduced data used by the reward-scale sensitivity
-  figure, including final payout-share metrics and raw score diagnostics.
-- `lottery_confidence.csv`: 512-sample lottery run with mean confidence
-  intervals and percentile summaries.
-- `exposure_sanity.csv`: one-report-flip sanity check for public payout
-  coordinate exposure.
-- `budget_allocation.csv`: fixed-budget payout vector for the MACI-derived
-  report profile.
-- `stake_concentration.csv`: dominant-stake sweep.
-- `e2e_overhead.csv`: MACI/reward proof time and reward gas from the latest full
-  MACI + reward Anvil run.
-- `operating_cost_projection.csv`: projected reward-layer operating cost for
-  10, 100, and 1000 claimants under fixed gas-price scenarios.
-- `reward_scaling.csv`: fixed-capacity `N_max = 64` utilization data for
-  `8, 16, 32, 64` active voters.
-- `reward_utilization.csv`: same data as `reward_scaling.csv`, kept under the
-  explicit utilization name for analysis scripts.
-- `gas_breakdown.csv`: reward-layer gas from the full MACI + reward Anvil run.
-- `reward_only_gas_breakdown.csv`: reward-only Anvil gas for comparison.
-- `anvil_reward_e2e_latest.json`: reward-only Anvil output.
-- `full_maci_reward_anvil_latest.json`: full MACI + reward Anvil output.
-- `proof_shape.csv`: reward circuit public/private input and constraint counts.
+| File | Contents |
+| --- | --- |
+| `full_maci_reward_anvil_latest.json` | Full MACI plus reward Anvil run. |
+| `anvil_reward_e2e_latest.json` | Reward-only Anvil run. |
+| `proof_shape.csv` | Reward circuit constraint and input counts. |
+| `gas_breakdown.csv` | Reward gas from full MACI plus reward run. |
+| `reward_only_gas_breakdown.csv` | Reward-only gas comparison. |
+| `e2e_overhead.csv` | Proof time and reward gas used by the overhead figure. |
+| `exposure_probability_sanity.csv` | Per-coordinate `q_j` movement after one report flip. |
+| `attack_simulation.csv` | Repeated-round transcript distinguishing simulation. |
+| `reward_sensitivity.csv` | Reward-scale sweep. |
+| `lottery_confidence.csv` | 512-sample lottery confidence data. |
+| `budget_allocation.csv` | Legacy exact-budget baseline payout vector. |
+| `stake_concentration.csv` | Public stake concentration sweep. |
+| `operating_cost_projection.csv` | Reward-layer operating cost scenarios. |
+| `reward_scaling.csv` | Standalone `N_max = 64` capacity experiment. |
 
 ## Regeneration
 
@@ -264,18 +212,16 @@ python3 -m venv .venv
 . .venv/bin/activate
 pip install -r requirements.txt
 npm run experiments:reward-data
+npm run experiments:attack-simulation
 npm run experiments:reward-scaling
 npm run experiments:reward-plots
 ```
 
-The plotting script writes both PNG previews and vector PDF figures under
-`figures/`.
+`npm run experiments:reward` runs the same full sequence in one command.
 
-## Scope Boundaries
+## Scope
 
-- The integrated MACI + reward flow is fixed at `N = 8`; reward-circuit
-  utilization data is standalone with `N_max = 64`.
-- MACI command salts remain part of the sidecar binding; a dedicated MACI reward
-  field would require a deeper MACI circuit change.
-- Production audit, Sybil resistance, live fee estimation, and user-effort
-  validation are separate work.
+The integrated run is fixed at `N = 8`. The `N_max = 64` data is a standalone
+capacity experiment, not a full MACI deployment at 64 voters. The prototype is
+not audited. Sybil policy, production randomness, registration policy, live fee
+quotes, and validation of actual human effort are outside this repository.

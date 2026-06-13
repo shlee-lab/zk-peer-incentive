@@ -294,7 +294,7 @@ def plot_e2e_overhead():
     if not proof_rows or not gas_rows:
         return
 
-    fig, axes = plt.subplots(1, 2, figsize=(5.15, 2.35), constrained_layout=True)
+    fig, axes = plt.subplots(1, 2, figsize=(6.15, 2.35), constrained_layout=True)
     ax = axes[0]
     proof_labels = ["MACI", "Reward"]
     proof_values = [float(row["value"]) for row in proof_rows]
@@ -309,11 +309,20 @@ def plot_e2e_overhead():
         ax.text(index, value * 1.14, f"{value:.1f}s", ha="center", va="bottom", fontsize=6.8, color=INK)
 
     ax = axes[1]
-    gas_labels = ["Register", "Fund", "Finalize", "Claim"]
+    gas_label_map = {
+        "Commit seed": "Commit",
+        "Register root": "Register",
+        "Reveal seed": "Reveal",
+        "Fund pool": "Fund",
+        "Verify + finalize": "Finalize",
+        "Claim": "Claim",
+    }
+    gas_labels = [gas_label_map.get(row["metric"], row["metric"]) for row in gas_rows]
     gas_values = [float(row["value"]) for row in gas_rows]
-    ax.bar(range(len(gas_values)), gas_values, color=[COLORS["blue"], COLORS["gray"], COLORS["green"], COLORS["purple"]], width=0.58)
+    gas_colors = [COLORS["purple"], COLORS["blue"], COLORS["purple"], COLORS["gray"], COLORS["green"], COLORS["orange"]]
+    ax.bar(range(len(gas_values)), gas_values, color=gas_colors[: len(gas_values)], width=0.58)
     set_common_axes(ax)
-    ax.set_xticks(range(len(gas_labels)), gas_labels, rotation=25, ha="right")
+    ax.set_xticks(range(len(gas_labels)), gas_labels, rotation=32, ha="right")
     ax.set_ylabel(r"Reward gas ($\times 10^3$)", labelpad=4)
     ax.yaxis.set_major_formatter(FuncFormatter(thousands))
     ax.set_ylim(0, max(gas_values) * 1.25)
@@ -434,14 +443,24 @@ def plot_reward_scaling():
 def plot_cost_profile():
     rows = read_csv("gas_breakdown.csv")
     label_map = {
+        "commit": "Commit\nseed",
         "register": "Register\nroot",
+        "reveal": "Reveal\nseed",
         "fund": "Fund\npool",
         "finalize": "Verify +\nfinalize",
         "claim": "Claim",
     }
     labels = [label_map[row["operation"]] for row in rows]
     values = [float(row["gas"]) for row in rows]
-    colors = [COLORS["blue"], COLORS["gray"], COLORS["green"], COLORS["purple"]]
+    color_map = {
+        "commit": COLORS["purple"],
+        "register": COLORS["blue"],
+        "reveal": COLORS["purple"],
+        "fund": COLORS["gray"],
+        "finalize": COLORS["green"],
+        "claim": COLORS["orange"],
+    }
+    colors = [color_map[row["operation"]] for row in rows]
 
     fig, ax = plt.subplots(figsize=(3.55, 2.45), constrained_layout=True)
     bars = ax.bar(range(len(labels)), values, color=colors, width=0.62)
@@ -464,6 +483,51 @@ def plot_cost_profile():
     save(fig, "cost_profile")
 
 
+def plot_attack_simulation():
+    rows = read_csv_if_exists("attack_simulation.csv")
+    if not rows:
+        return
+
+    gammas = ["0.02", "0.05", "0.10"]
+    colors = [COLORS["blue"], COLORS["green"], COLORS["purple"]]
+    fig, ax = plt.subplots(figsize=(3.55, 2.45), constrained_layout=True)
+    for gamma, color in zip(gammas, colors):
+        points = [
+            (
+                int(row["rounds"]),
+                float(row["empiricalAdvantage"]),
+                float(row["theoryAdvantage"]),
+            )
+            for row in rows
+            if row["gamma"] == gamma
+        ]
+        points.sort()
+        xs = [point[0] for point in points]
+        empirical = [point[1] for point in points]
+        theory = [point[2] for point in points]
+        ax.plot(xs, empirical, color=color, label=rf"$\gamma={gamma}$ empirical")
+        ax.plot(xs, theory, color=color, linestyle="--", alpha=0.75)
+
+    set_common_axes(ax)
+    ax.set_xlabel("Repeated rounds $k$", labelpad=4)
+    ax.set_ylabel("Classifier advantage", labelpad=4)
+    ax.yaxis.set_major_formatter(FuncFormatter(percent))
+    ax.set_xlim(1, 50)
+    ax.set_ylim(0, 0.52)
+    ax.text(
+        0.04,
+        0.08,
+        "dashed: theory curve",
+        transform=ax.transAxes,
+        ha="left",
+        va="bottom",
+        fontsize=6.8,
+        color=MUTED,
+    )
+    ax.legend(loc="lower right", handlelength=1.8)
+    save(fig, "attack_simulation")
+
+
 def main():
     if not DATA_DIR.exists():
         raise SystemExit("missing experiment data; run npm run experiments:reward-data first")
@@ -476,6 +540,7 @@ def main():
     plot_operating_cost_projection()
     plot_reward_scaling()
     plot_cost_profile()
+    plot_attack_simulation()
 
 
 if __name__ == "__main__":

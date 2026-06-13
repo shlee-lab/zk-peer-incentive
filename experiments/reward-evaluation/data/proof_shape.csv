@@ -1,8 +1,8 @@
 metric,value
 voters,8
 merkle_depth,3
-public_inputs,31
-private_inputs,88
-constraints,25512
-allocation_mode,fixed_budget_lottery
-seed_mode,poseidon_fold
+public_inputs,33
+private_inputs,96
+constraints,26080
+allocation_mode,coordinate_bernoulli_lottery
+seed_mode,external_commit_reveal_seed

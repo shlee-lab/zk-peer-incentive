@@ -7,7 +7,7 @@ const { performance } = require("perf_hooks");
 const { spawnSync } = require("child_process");
 const {
   buildFinalState,
-  computeFixedBudgetLotteryPayouts,
+  computeBernoulliLotteryPayouts,
 } = require("../reference/reward_model");
 
 const FIELD_PRIME =
@@ -23,6 +23,7 @@ const ACTIVE_COUNTS = (process.env.REWARD_SCALING_ACTIVE_COUNTS || "8,16,32,64")
   .split(",")
   .map((value) => Number(value.trim()))
   .filter((value) => Number.isInteger(value) && value > 0);
+const DEFAULT_GAMMA_SCALED = (5n * (1n << 32n)) / 100n;
 
 function fieldElement(label) {
   return BigInt(`0x${crypto.createHash("sha256").update(label).digest("hex")}`) % FIELD_PRIME;
@@ -94,8 +95,8 @@ function makeCircuitVariant(n, depth, outDir) {
   const variant = source
     .replaceAll('../node_modules/circomlib/circuits/', '../../../node_modules/circomlib/circuits/')
     .replace(
-      /component main \{ public \[payouts, recipients, stakes, smoothing, kappa, scale, rhoTau, disputeId, finalStateRoot, rewardBudget\] \} = RewardCheck\(8, 3, 128, 32\);/,
-      `component main { public [payouts, recipients, stakes, smoothing, kappa, scale, rhoTau, disputeId, finalStateRoot, rewardBudget] } = RewardCheck(${n}, ${depth}, 128, 32);`
+      /component main \{ public \[payouts, recipients, stakes, smoothing, kappa, scale, rhoTau, disputeId, finalStateRoot, rewardBudget, gammaScaled, randomSeed\] \} = RewardCheck\(8, 3, 128, 32\);/,
+      `component main { public [payouts, recipients, stakes, smoothing, kappa, scale, rhoTau, disputeId, finalStateRoot, rewardBudget, gammaScaled, randomSeed] } = RewardCheck(${n}, ${depth}, 128, 32);`
     );
   const file = path.join(outDir, `reward_check_${n}.circom`);
   fs.mkdirSync(outDir, { recursive: true });
@@ -120,7 +121,7 @@ function makeInputs(maxVoters, activeVoters) {
   const active = new Set(activePositions(maxVoters, activeVoters));
   const reports = Array.from({ length: maxVoters }, () => 0);
   const stakes = Array.from({ length: maxVoters }, () => 0n);
-  const recipients = Array.from({ length: maxVoters }, () => 0n);
+  const recipients = Array.from({ length: maxVoters }, (_, i) => recipientValue(i));
   const orderedActive = [...active].sort((a, b) => a - b);
   orderedActive.forEach((position, activeIndex) => {
     reports[position] = basePattern[activeIndex % basePattern.length];
@@ -143,11 +144,13 @@ function makeInputs(maxVoters, activeVoters) {
     ),
     recipients,
     disputeId: 78n,
+    randomSeed: fieldElement(`reward utilization external seed ${maxVoters} ${activeVoters}`),
     smoothing: 1n,
     kappa: 100n,
     scale: 1_000n,
     rhoTau: 3_000_000n,
-    rewardBudget: 3_000_000n,
+    rewardBudget: BigInt(maxVoters) * 3_000_000n,
+    gammaScaled: DEFAULT_GAMMA_SCALED,
   };
 }
 
@@ -158,12 +161,7 @@ async function makeCircuitInput(inputs) {
     nonceCommitments: finalState.nonceCommitments,
     stateRoot: finalState.finalStateRoot,
   };
-  const allocation = await computeFixedBudgetLotteryPayouts(rewardInputs);
-  const allocationRemainders = [...allocation.allocationRemainders, 0n];
-
-  if (allocation.payouts.reduce((acc, payout) => acc + payout, 0n) !== inputs.rewardBudget) {
-    throw new Error("scaling vector does not distribute the fixed reward budget");
-  }
+  const allocation = await computeBernoulliLotteryPayouts(rewardInputs);
 
   return {
     input: {
@@ -175,7 +173,8 @@ async function makeCircuitInput(inputs) {
       merklePathElements: finalState.paths.map((pathData) => pathData.pathElements),
       expectedScaled: allocation.rewardWitness.map((reward) => reward.scaled),
       rewardRemainders: allocation.rewardWitness.map((reward) => reward.remainder),
-      allocationRemainders,
+      rawThresholds: allocation.rawThresholds,
+      thresholdRemainders: allocation.thresholdRemainders,
       payouts: allocation.payouts,
       recipients: inputs.recipients,
       stakes: inputs.stakes,
@@ -186,6 +185,8 @@ async function makeCircuitInput(inputs) {
       disputeId: inputs.disputeId,
       finalStateRoot: finalState.finalStateRoot,
       rewardBudget: inputs.rewardBudget,
+      gammaScaled: inputs.gammaScaled,
+      randomSeed: inputs.randomSeed,
     },
     allocation,
     finalState,
@@ -306,8 +307,8 @@ async function runForActiveCount(capacity, activeVoters) {
     activeVoters,
     utilization: (activeVoters / capacity.maxVoters).toFixed(6),
     merkleDepth: capacity.depth,
-    publicInputs: 3 * capacity.maxVoters + 7,
-    privateInputs: capacity.maxVoters * (8 + capacity.depth),
+    publicInputs: 3 * capacity.maxVoters + 9,
+    privateInputs: capacity.maxVoters * (9 + capacity.depth),
     constraints: capacity.r1csInfo.constraints,
     wires: capacity.r1csInfo.wires,
     labels: capacity.r1csInfo.labels,
@@ -321,6 +322,8 @@ async function runForActiveCount(capacity, activeVoters) {
     totalPayout: totalPayout.toString(),
     paidRecipientCount,
     winnerCount: allocation.wins.filter((win) => win === 1n).length,
+    gammaScaled: allocation.gammaScaled.toString(),
+    maxExposure: (BigInt(capacity.maxVoters) * allocation.rhoTau).toString(),
     artifactDir: path.relative(REPO_ROOT, outDir),
     verifyOutput: (verify.stdout + verify.stderr).includes("OK") ? "OK" : "unknown",
   };
@@ -348,7 +351,8 @@ async function main() {
     maxVoters: MAX_VOTERS,
     activeVoterCounts: ACTIVE_COUNTS,
     ptau,
-    relation: "fixed-capacity reward circuit utilization with Poseidon-fold lottery seed",
+    relation: "fixed-capacity coordinate-wise Bernoulli reward circuit utilization",
+    gammaScaled: DEFAULT_GAMMA_SCALED.toString(),
     note: "Artifacts are generated under poc/artifacts/scaling and are intentionally gitignored.",
   });
   console.log(`Wrote ${path.join(DATA_DIR, "reward_scaling.csv")}`);

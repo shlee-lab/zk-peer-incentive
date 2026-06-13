@@ -4,9 +4,10 @@ const crypto = require("crypto");
 const fs = require("fs");
 const path = require("path");
 const { spawnSync } = require("child_process");
+const ethers = require("ethers");
 const {
   buildFinalState,
-  computeFixedBudgetLotteryPayouts,
+  computeBernoulliLotteryPayouts,
 } = require("../reference/reward_model");
 
 const FIELD_PRIME =
@@ -33,6 +34,31 @@ function parseArgs(argv) {
 
 function fieldElement(label) {
   return BigInt(`0x${crypto.createHash("sha256").update(label).digest("hex")}`) % FIELD_PRIME;
+}
+
+function gammaScaled(numerator, denominator, bits = 32n) {
+  return (BigInt(numerator) * (1n << bits)) / BigInt(denominator);
+}
+
+function bytes32Label(label) {
+  return `0x${crypto.createHash("sha256").update(label).digest("hex")}`;
+}
+
+function seedMaterial(sidecar, disputeId, finalStateRoot) {
+  const seedPreimage = sidecar.seedPreimage
+    ? BigInt(sidecar.seedPreimage)
+    : fieldElement(`${sidecar.nonceLabel || "full-maci-reward-sidecar"} external lottery seed`);
+  const seedSalt = sidecar.seedSalt || bytes32Label(`${sidecar.nonceLabel || "full-maci-reward-sidecar"} seed salt`);
+  const seedCommitment = ethers.utils.solidityKeccak256(
+    ["uint256", "bytes32"],
+    [seedPreimage.toString(), seedSalt],
+  );
+  const randomSeed =
+    BigInt(ethers.utils.solidityKeccak256(
+      ["uint256", "bytes32", "uint256", "uint256"],
+      [seedPreimage.toString(), seedSalt, disputeId.toString(), finalStateRoot.toString()],
+    )) % FIELD_PRIME;
+  return { seedPreimage, seedSalt, seedCommitment, randomSeed };
 }
 
 function bigintReplacer(_, value) {
@@ -102,26 +128,33 @@ function baseInputs(sidecar, attempt) {
     kappa: BigInt(sidecar.kappa ?? 100),
     scale: BigInt(sidecar.scale ?? 1_000),
     rhoTau: BigInt(sidecar.rhoTau ?? 3_000_000),
-    rewardBudget: BigInt(sidecar.rewardBudget ?? 3_000_000),
+    rewardBudget: BigInt(sidecar.rewardBudget ?? 24_000_000),
+    gammaScaled: BigInt(sidecar.gammaScaled ?? gammaScaled(5n, 100n)),
   };
 }
 
 async function buildVector(sidecar, attempt) {
   const inputs = baseInputs(sidecar, attempt);
   const finalState = await buildFinalState(inputs);
+  const seed = seedMaterial(sidecar, inputs.disputeId, finalState.finalStateRoot);
   const sidecarInputs = { ...inputs, nonceCommitments: finalState.nonceCommitments };
-  const rewardInputs = { ...sidecarInputs, stateRoot: finalState.finalStateRoot };
-  const allocation = await computeFixedBudgetLotteryPayouts(rewardInputs);
+  const rewardInputs = {
+    ...sidecarInputs,
+    stateRoot: finalState.finalStateRoot,
+    randomSeed: seed.randomSeed,
+  };
+  const allocation = await computeBernoulliLotteryPayouts(rewardInputs);
   const rewardWitness = allocation.rewardWitness;
   const payouts = allocation.payouts.map((payout) => payout.toString());
-  const allocationRemainders = [...allocation.allocationRemainders, 0n].map((remainder) =>
-    remainder.toString()
-  );
 
   const vector = {
-    version: "full-maci-sidecar-fixed-budget-lottery",
-    description: "Fixed-budget lottery reward vector derived from official MACI final poll reports with recipient and command-salt nonce binding.",
+    version: "full-maci-sidecar-bernoulli-lottery",
+    description: "Coordinate-wise Bernoulli lottery reward vector derived from official MACI final poll reports with recipient and command-salt nonce binding.",
     inputs: rewardInputs,
+    seedPreimage: seed.seedPreimage.toString(),
+    seedSalt: seed.seedSalt,
+    seedCommitment: seed.seedCommitment,
+    randomSeed: seed.randomSeed.toString(),
     nonceCommitments: finalState.nonceCommitments.map((commitment) => commitment.toString()),
     leaves: finalState.leaves.map((leaf) => leaf.toString()),
     merklePaths: finalState.paths.map((pathData) => ({
@@ -133,16 +166,17 @@ async function buildVector(sidecar, attempt) {
     lotteryBits: allocation.lotteryBits,
     lotteryScale: allocation.lotteryScale.toString(),
     rhoTau: allocation.rhoTau.toString(),
+    gammaScaled: allocation.gammaScaled.toString(),
+    upperThreshold: allocation.upperThreshold.toString(),
     drawHashes: allocation.drawHashes.map((hash) => hash.toString()),
     draws: allocation.draws.map((draw) => draw.toString()),
     wins: allocation.wins.map((win) => win.toString()),
-    lotteryTentativePayouts: allocation.lotteryTentativePayouts.map((payout) => payout.toString()),
     expectedRewards: rewardWitness.map((reward) => reward.scaled.toString()),
     rewardRemainders: rewardWitness.map((reward) => reward.remainder.toString()),
-    allocationBaseline: allocation.allocationBaseline.toString(),
-    allocationScores: allocation.allocationScores.map((score) => score.toString()),
-    totalAllocationScore: allocation.totalAllocationScore.toString(),
-    allocationRemainders,
+    rawThresholds: allocation.rawThresholds.map((threshold) => threshold.toString()),
+    thresholdRemainders: allocation.thresholdRemainders.map((remainder) => remainder.toString()),
+    thresholds: allocation.thresholds.map((threshold) => threshold.toString()),
+    expectedPayoutNumerator: allocation.expectedPayoutNumerator.toString(),
     payouts,
     nonceAttempt: attempt,
   };
@@ -156,7 +190,8 @@ async function buildVector(sidecar, attempt) {
     merklePathElements: vector.merklePaths.map((pathData) => pathData.pathElements),
     expectedScaled: vector.expectedRewards,
     rewardRemainders: vector.rewardRemainders,
-    allocationRemainders: vector.allocationRemainders,
+    rawThresholds: vector.rawThresholds,
+    thresholdRemainders: vector.thresholdRemainders,
     payouts,
     recipients: inputs.recipients,
     stakes: inputs.stakes,
@@ -167,6 +202,8 @@ async function buildVector(sidecar, attempt) {
     disputeId: inputs.disputeId,
     finalStateRoot: finalState.finalStateRoot,
     rewardBudget: inputs.rewardBudget,
+    gammaScaled: inputs.gammaScaled,
+    randomSeed: seed.randomSeed,
   };
 
   return { inputs, vector, circuitInput };
@@ -243,6 +280,10 @@ async function main() {
     disputeId: publicSignals[28],
     finalStateRoot: publicSignals[29],
     proofGenerationMs,
+    seedPreimage: vector.seedPreimage,
+    seedSalt: vector.seedSalt,
+    seedCommitment: vector.seedCommitment,
+    randomSeed: vector.randomSeed,
   };
   writeJson(fixtureFile, fixture);
 
@@ -250,6 +291,8 @@ async function main() {
     pollId: inputs.disputeId.toString(),
     finalRewardStateRoot: vector.finalStateRoot,
     nonceSource: sidecar.nonceSource || "maci-vote-command-salt",
+    randomSeed: vector.randomSeed,
+    seedCommitment: vector.seedCommitment,
     reports: inputs.reports,
     lotteryWins: vector.wins,
     maciStateIndices: inputs.maciStateIndices.map((value) => value.toString()),

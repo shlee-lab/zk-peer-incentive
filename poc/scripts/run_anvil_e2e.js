@@ -193,11 +193,22 @@ async function main() {
     ], metrics);
 
     await waitTx(
+      "commitRandomSeed",
+      await registry.commitRandomSeed(disputeId, fixture.seedCommitment),
+      metrics,
+    );
+    await waitTx(
       "registerFinalState",
       await registry.registerFinalState(disputeId, finalStateRoot, 1),
       metrics,
     );
-    await waitTx("fundDispute", await pool.fundDispute(disputeId, { value: totalPayout }), metrics);
+    await waitTx(
+      "revealRandomSeed",
+      await registry.revealRandomSeed(disputeId, fixture.seedPreimage, fixture.seedSalt),
+      metrics,
+    );
+    const maxExposure = BigInt(fixture.payoutCount) * BigInt(fixture.publicSignals[27]);
+    await waitTx("fundDispute", await pool.fundDispute(disputeId, { value: maxExposure }), metrics);
     await waitTx(
       "finalizeRewards",
       await pool.finalizeRewards(

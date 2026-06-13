@@ -219,6 +219,14 @@ async function computeLotterySeed({ nonces, disputeId, stateRoot }) {
   return seed;
 }
 
+async function computeExternalLotterySeed({ disputeId, stateRoot, randomSeed }) {
+  return poseidonHash([
+    toBigInt(disputeId, "disputeId"),
+    toBigInt(stateRoot, "stateRoot"),
+    toBigInt(randomSeed, "randomSeed"),
+  ]);
+}
+
 async function computeLotteryPayouts({
   reports,
   stakes,
@@ -386,6 +394,107 @@ async function computeFixedBudgetLotteryPayouts({
 
 async function verifyFixedBudgetLotteryPayouts(inputs, expectedPayouts) {
   const { payouts } = await computeFixedBudgetLotteryPayouts(inputs);
+  if (expectedPayouts.length !== payouts.length) return false;
+  return payouts.every((payout, i) => payout === toBigInt(expectedPayouts[i], `expected[${i}]`));
+}
+
+async function computeBernoulliLotteryPayouts({
+  reports,
+  stakes,
+  peerIndices,
+  disputeId,
+  stateRoot,
+  randomSeed,
+  smoothing = 1n,
+  kappa = 1n,
+  scale = 1_000_000n,
+  rhoTau,
+  gammaScaled,
+  rewardBudget,
+  lotteryBits = 32,
+}) {
+  assertInputs({ reports, stakes, peerIndices, smoothing, kappa });
+  if (!Number.isInteger(lotteryBits) || lotteryBits <= 0 || lotteryBits > 64) {
+    throw new Error("lotteryBits must be an integer in [1, 64]");
+  }
+
+  const brhoTau = toBigInt(rhoTau, "rhoTau");
+  if (brhoTau <= 0n) throw new Error("rhoTau must be positive");
+  const bgammaScaled = toBigInt(gammaScaled, "gammaScaled");
+  const lotteryScale = 1n << BigInt(lotteryBits);
+  if (bgammaScaled <= 0n || bgammaScaled * 2n >= lotteryScale) {
+    throw new Error("gammaScaled must be in (0, 2^(lotteryBits-1))");
+  }
+  const upperThreshold = lotteryScale - bgammaScaled;
+  const budget = rewardBudget === undefined ? undefined : toBigInt(rewardBudget, "rewardBudget");
+
+  const rewardWitness = computeRewardDivisionWitness({
+    reports,
+    stakes,
+    peerIndices,
+    smoothing,
+    kappa,
+    scale,
+  });
+  const seed = await computeExternalLotterySeed({ disputeId, stateRoot, randomSeed });
+
+  const rawThresholds = [];
+  const thresholdRemainders = [];
+  const thresholds = [];
+  const drawHashes = [];
+  const draws = [];
+  const wins = [];
+  const payouts = [];
+  let expectedPayoutNumerator = 0n;
+  for (let i = 0; i < reports.length; i += 1) {
+    const numerator = rewardWitness[i].scaled * lotteryScale;
+    const rawThreshold = numerator / brhoTau;
+    const thresholdRemainder = numerator % brhoTau;
+    const threshold =
+      rawThreshold < bgammaScaled
+        ? bgammaScaled
+        : rawThreshold > upperThreshold
+          ? upperThreshold
+          : rawThreshold;
+    const drawHash = await poseidonHash([seed, BigInt(i)]);
+    const draw = lowBits(drawHash, lotteryBits);
+    const win = draw < threshold ? 1n : 0n;
+    rawThresholds.push(rawThreshold);
+    thresholdRemainders.push(thresholdRemainder);
+    thresholds.push(threshold);
+    drawHashes.push(drawHash);
+    draws.push(draw);
+    wins.push(win);
+    payouts.push(win * brhoTau);
+    expectedPayoutNumerator += threshold * brhoTau;
+  }
+
+  if (budget !== undefined && expectedPayoutNumerator > budget * lotteryScale) {
+    throw new Error("expected payout exceeds rewardBudget");
+  }
+
+  return {
+    seed,
+    lotteryBits,
+    lotteryScale,
+    rhoTau: brhoTau,
+    gammaScaled: bgammaScaled,
+    upperThreshold,
+    rewardBudget: budget,
+    rewardWitness,
+    rawThresholds,
+    thresholdRemainders,
+    thresholds,
+    drawHashes,
+    draws,
+    wins,
+    payouts,
+    expectedPayoutNumerator,
+  };
+}
+
+async function verifyBernoulliLotteryPayouts(inputs, expectedPayouts) {
+  const { payouts } = await computeBernoulliLotteryPayouts(inputs);
   if (expectedPayouts.length !== payouts.length) return false;
   return payouts.every((payout, i) => payout === toBigInt(expectedPayouts[i], `expected[${i}]`));
 }
@@ -624,7 +733,9 @@ module.exports = {
   cmp,
   computeFixedBudgetPayouts,
   computeFixedBudgetLotteryPayouts,
+  computeBernoulliLotteryPayouts,
   computeLeaveOneOutNormalizers,
+  computeExternalLotterySeed,
   computeLotterySeed,
   computeLotteryPayouts,
   computeRewardDivisionWitness,
@@ -644,6 +755,7 @@ module.exports = {
   verifyMerklePath,
   verifyFixedBudgetPayouts,
   verifyFixedBudgetLotteryPayouts,
+  verifyBernoulliLotteryPayouts,
   verifyLotteryPayouts,
   verifyScaledPayouts,
 };

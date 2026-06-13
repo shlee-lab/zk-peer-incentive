@@ -83,6 +83,10 @@ function main() {
   const amounts = publicSignals.slice(0, vector.payouts.length);
   const recipients = recipientAddresses(amounts.length);
   const totalPayout = amounts.reduce((acc, value) => acc + BigInt(value), 0n);
+  const seedPreimage = vector.seedPreimage || "0";
+  const seedSalt = vector.seedSalt || "0x0000000000000000000000000000000000000000000000000000000000000000";
+  const seedCommitment = vector.seedCommitment || seedSalt;
+  const randomSeed = vector.randomSeed || publicSignals[32] || "0";
 
   const source = `// SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
@@ -91,6 +95,10 @@ library RewardProofFixture {
     uint256 internal constant PUBLIC_SIGNAL_COUNT = ${publicSignals.length};
     uint256 internal constant PAYOUT_COUNT = ${amounts.length};
     uint256 internal constant TOTAL_PAYOUT = ${totalPayout.toString()};
+    uint256 internal constant SEED_PREIMAGE = ${seedPreimage};
+    bytes32 internal constant SEED_SALT = ${seedSalt};
+    bytes32 internal constant SEED_COMMITMENT = ${seedCommitment};
+    uint256 internal constant RANDOM_SEED = ${randomSeed};
 
 ${uintFunction("publicSignals", publicSignals)}
 
@@ -119,6 +127,11 @@ ${proofBytes(proof)}
       totalPayout: totalPayout.toString(),
       disputeId: publicSignals[28],
       finalStateRoot: publicSignals[29],
+      gammaScaled: publicSignals[31],
+      randomSeed: publicSignals[32],
+      seedPreimage,
+      seedSalt,
+      seedCommitment,
     };
     fs.mkdirSync(path.dirname(jsonOutputFile), { recursive: true });
     fs.writeFileSync(jsonOutputFile, `${JSON.stringify(jsonFixture, null, 2)}\n`);

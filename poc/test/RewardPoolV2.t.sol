@@ -7,7 +7,7 @@ import "../contracts/RewardVerifierAdapter.sol";
 import "./RewardProofFixture.sol";
 
 contract RewardPoolV2Test {
-    uint256 internal constant FINAL_STATE_ROOT_SIGNAL_INDEX = 28;
+    uint256 internal constant FINAL_STATE_ROOT_SIGNAL_INDEX = 29;
 
     function testGeneratedVerifierAcceptsRealProofBoundToFinalStateRoot() public {
         Groth16Verifier verifier = new Groth16Verifier();

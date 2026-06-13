@@ -5,7 +5,7 @@ const {
   aggregateFrequency,
   buildFinalState,
   cmp,
-  computeFixedBudgetLotteryPayouts,
+  computeBernoulliLotteryPayouts,
   computeLotteryPayouts,
   computeRewards,
   div,
@@ -14,7 +14,7 @@ const {
   mismatchRatios,
   splitLeaveOneOutFrequency,
   verifyMerklePath,
-  verifyFixedBudgetLotteryPayouts,
+  verifyBernoulliLotteryPayouts,
   verifyLotteryPayouts,
   verifyScaledPayouts,
 } = require("./reward_model");
@@ -136,10 +136,10 @@ async function testLotteryPayoutsAndTamperDetection() {
 }
 
 async function testMerkleFinalStateVector() {
-  const vector = require("../vectors/v2/reward_fixed_budget_state.json");
+  const vector = require("../vectors/v2/reward_bernoulli_state.json");
   const inputs = vector.inputs;
   const finalState = await buildFinalState(inputs);
-  const allocation = await computeFixedBudgetLotteryPayouts(inputs);
+  const allocation = await computeBernoulliLotteryPayouts(inputs);
 
   assert.deepStrictEqual(finalState.leaves.map((leaf) => leaf.toString()), vector.leaves);
   assert.strictEqual(finalState.finalStateRoot.toString(), vector.finalStateRoot);
@@ -147,20 +147,19 @@ async function testMerkleFinalStateVector() {
   assert.deepStrictEqual(allocation.draws.map((draw) => draw.toString()), vector.draws);
   assert.deepStrictEqual(allocation.wins.map((win) => win.toString()), vector.wins);
   assert.deepStrictEqual(
-    allocation.lotteryTentativePayouts.map((payout) => payout.toString()),
-    vector.lotteryTentativePayouts,
-  );
-  assert.deepStrictEqual(
     allocation.rewardWitness.map((reward) => reward.scaled.toString()),
     vector.expectedRewards,
   );
   assert.deepStrictEqual(
-    allocation.allocationScores.map((score) => score.toString()),
-    vector.allocationScores,
+    allocation.rawThresholds.map((threshold) => threshold.toString()),
+    vector.rawThresholds,
   );
-  assert.strictEqual(allocation.totalAllocationScore.toString(), vector.totalAllocationScore);
+  assert.deepStrictEqual(
+    allocation.thresholds.map((threshold) => threshold.toString()),
+    vector.thresholds,
+  );
   assert.deepStrictEqual(allocation.payouts.map((payout) => payout.toString()), vector.payouts);
-  assert.strictEqual(await verifyFixedBudgetLotteryPayouts(inputs, vector.payouts), true);
+  assert.strictEqual(await verifyBernoulliLotteryPayouts(inputs, vector.payouts), true);
 
   for (let i = 0; i < finalState.leaves.length; i += 1) {
     assert.deepStrictEqual(

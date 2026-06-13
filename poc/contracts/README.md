@@ -1,86 +1,85 @@
 # Solidity PoC Contracts
 
-These contracts are the minimal payout layer for the ZK reward PoC.
+These contracts are the minimal payout layer for the ZK reward prototype. They
+are written for a local research run, not for production deployment.
 
 ## Files
 
 - `IRewardVerifier.sol`: generic verifier interface.
-- `MockRewardVerifier.sol`: mock verifier for contract-flow tests.
-- `RewardPool.sol`: ETH payout pool gated by a verifier proof.
-- `RewardGroth16Verifier.sol`: generated snarkjs Groth16 verifier for the
-  current v2/v3 circuit.
-- `RewardVerifierAdapter.sol`: adapter from `bytes` proof and dynamic public
-  signals to the generated verifier's fixed-array interface.
-- `FinalStateRegistry.sol`: minimal reward sidecar registry with a MACI tally
-  status flag.
-- `IntegratedRewardPool.sol`: reward pool that binds proof public signals to
-  the registry's `disputeId`, reward sidecar `finalStateRoot`, and payout
-  recipients.
+- `MockRewardVerifier.sol`: mock verifier for separate contract-flow tests.
+- `RewardPool.sol`: simple verifier-gated ETH pool used by older sanity tests.
+- `RewardGroth16Verifier.sol`: snarkjs-generated Groth16 verifier for the
+  current reward circuit.
+- `RewardVerifierAdapter.sol`: adapter from `bytes` proof data and dynamic
+  public signals to the generated verifier's fixed-array interface.
+- `FinalStateRegistry.sol`: reward sidecar registry with MACI tally status and
+  commit-reveal seed sequencing.
+- `IntegratedRewardPool.sol`: registry-bound pool that verifies the reward
+  proof, records claimable balances, and pays claims.
 
-## Basic RewardPool Flow
+## Integrated Flow
 
-1. Deploy a verifier.
-2. Deploy `RewardPool(verifier)`.
-3. Owner creates a funded dispute with `createDispute()`.
-4. Prover submits recipients, amounts, proof, and public signals.
-5. `RewardPool` checks:
-   - verifier accepts the proof;
-   - the first `amounts.length` public signals equal the payout amounts;
-   - recipient public signals equal the submitted recipient addresses;
-   - the funded budget covers total payout.
-6. Recipients call `claim(disputeId)`.
+The current Anvil flow is:
 
-## Integrated v3 Flow
+```text
+commit random seed
+register final reward state root with MACI tally status
+reveal random seed
+fund pool for N * rhoTau maximum exposure
+verify reward proof and finalize payouts
+recipient claims
+```
 
-1. Deploy generated `Groth16Verifier`.
-2. Deploy `RewardVerifierAdapter`.
-3. Deploy `FinalStateRegistry`.
-4. Deploy `IntegratedRewardPool(adapter, registry)`.
-5. Register `finalStateRoot` for the dispute in the registry with verified MACI
-   tally status.
-6. Fund the dispute in the reward pool.
-7. Call `finalizeRewards` with recipients, payouts, proof, and public signals.
-8. Recipients call `claim(disputeId)`.
+`FinalStateRegistry` enforces that the seed commitment exists before root
+registration and that the seed is revealed after the root is registered.
+`IntegratedRewardPool` then checks:
 
-`IntegratedRewardPool` checks that public signal index 28 equals `disputeId`
-and index 29 equals the registry's `finalStateRoot`. It also checks recipient
-public signals `8..15` against the submitted recipient addresses and requires
-the registry entry's `maciTallyVerified` flag to be true.
+- MACI tally status is marked verified;
+- public signal `disputeId` matches the registry entry;
+- public signal `finalStateRoot` matches the registry entry;
+- public signal `randomSeed` matches the revealed registry seed;
+- submitted recipients match public signals `8..15`;
+- submitted amounts match public signals `0..7`;
+- every payout is binary, either `0` or `rhoTau`;
+- the pool has at least `N * rhoTau` remaining before finalization;
+- the Groth16 proof verifies.
 
-## Connecting a Generated snarkjs Verifier
+The contract does not require `sum_i payout_i == rewardBudget`. Under the
+Bernoulli rule the total payout is random. Unpaid balance remains in the pool
+and can be withdrawn through the owner remainder path after finalization.
 
-`snarkjs` generates verifier contracts with a typed Groth16 interface rather
-than the generic `bytes` interface used by `RewardPool`.
-`RewardVerifierAdapter` decodes `abi.encode(a, b, c)` and copies the 31 public
+## Public Signal Order
+
+`IntegratedRewardPool` and `RewardVerifierAdapter` expect 33 public signals:
+
+```text
+payouts[0..7]
+recipients[8..15]
+stakes[16..23]
+smoothing[24]
+kappa[25]
+scale[26]
+rhoTau[27]
+disputeId[28]
+finalStateRoot[29]
+rewardBudget[30]
+gammaScaled[31]
+randomSeed[32]
+```
+
+`RewardVerifierAdapter` decodes `abi.encode(a, b, c)` and copies those 33
 signals into the generated verifier's fixed-size array.
 
-For a production contract, prefer a typed adapter and a stable proof/public
-input ABI over raw `bytes` decoding.
+## Local Commands
 
-## Local Foundry Sketch
-
-Run:
+From `poc/`:
 
 ```bash
 forge build
 forge test -vvv
-```
-
-The tests do not use external Foundry dependencies. They verify the real proof
-through the generated verifier and check rejection of tampered proof data or
-public payout signals. v3 tests also cover registry-bound finalization and
-claims.
-
-Run the local Anvil E2E flow:
-
-```bash
 npm run e2e:anvil
 ```
 
-## Contract Scope
-
-- The current payout layer uses ETH for a simple local E2E flow.
-- The contract verifies proof-bound payouts, recipients, poll id, and reward
-  state root before recording claimable balances.
-- MACI vote processing, report derivation, and command-salt extraction are
-  handled by the MACI-side adapter and reward proof generation scripts.
+The tests verify the real Groth16 proof through the generated verifier and
+check rejection of tampered proof data, roots, seeds, payout signals, and
+double finalization.

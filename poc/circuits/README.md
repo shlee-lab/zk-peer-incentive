@@ -1,43 +1,40 @@
 # Reward Circuit
 
-`reward_check.circom` is the fixed-budget reward sidecar circuit for the relation in
-`../zk_relation.md`.
+`reward_check.circom` implements the Bernoulli reward sidecar relation described
+in `../zk_relation.md`.
 
-It verifies fixed-budget lottery payouts for hidden binary reports and private nonces using:
+It proves that hidden binary reports are included in a registered reward state
+root and that each public payout follows:
+
+```text
+payout_i = rhoTau if low32(Poseidon(seed, i)) < q_i * 2^32
+payout_i = 0 otherwise
+```
+
+where `q_i` is the circuit-enforced clamp of the peer-prediction score:
+
+```text
+q_i = clamp(x_i / rhoTau, gamma, 1 - gamma)
+```
+
+The circuit checks:
 
 - smoothed stake-weighted leave-one-out frequency;
 - inverse-frequency peer agreement;
 - ring peer matching, `peer(i) = i+1 mod N`;
-- lottery draws from `Poseidon(seed, i)`, where `seed` binds all private nonces
-  plus the dispute id and reward sidecar root;
-- integer floor payouts via quotient/remainder constraints;
-- fixed-budget normalization with `allocationScore_i = scale + win_i * rhoTau`;
 - Poseidon nonce commitments `H(nonce_i, 0)`;
 - Poseidon reward sidecar leaves
   `H(maciStateIndex_i, voterId_i, report_i, nonceCommitment_i, stake_i, recipient_i)`;
-- fixed-position Merkle openings for all 8 voters to `finalStateRoot`.
+- fixed-position Merkle openings for all 8 voters to `finalStateRoot`;
 - public recipient addresses bound to the sidecar leaves;
-- explicit range checks for public stakes, parameters, payouts, recipients,
-  expected scores, allocation remainders, and division remainders.
+- external `randomSeed` mixed with `disputeId` and `finalStateRoot`;
+- gamma clamp and threshold comparison inside the circuit;
+- binary public payouts in `{0, rhoTau}`;
+- expected-payout cap against `rewardBudget`;
+- range checks for public parameters and arithmetic witnesses.
 
-## Current Scope
-
-This is a reward sidecar relation for an unmodified MACI flow. It proves that
-the private reports and nonces used by the reward computation are bound to a
-MACI-derived reward state root. MACI message processing and tally correctness
-remain handled by the pinned official MACI baseline.
-
-## Install Tools
-
-Install Circom and snarkjs using their official installation instructions. A
-typical local setup is:
-
-```bash
-npm install -g snarkjs
-```
-
-Circom itself is usually installed from the Circom release binaries or built
-from source.
+The contract layer is responsible for fixing `randomSeed` only after
+`finalStateRoot` registration. The local PoC uses commit-reveal.
 
 ## Compile
 
@@ -66,19 +63,12 @@ npx snarkjs zkey export verificationkey artifacts/v2/reward_check_final.zkey art
 npx snarkjs zkey export solidityverifier artifacts/v2/reward_check_final.zkey contracts/RewardGroth16Verifier.sol
 ```
 
-The generated verifier is wired into `RewardPool` through
+The generated verifier is wired into the generic reward pool interface through
 `contracts/RewardVerifierAdapter.sol`.
 
-## Current Integration
+## Public Signal Order
 
-The integrated registry/reward-pool flow on Anvil uses this circuit and requires
-a registry entry marked with verified MACI tally status before rewards can be
-finalized.
-
-The private `nonces[i]` values are intended to be MACI `VoteCommand.salt`
-values in the full MACI experiment.
-
-The public input vector has 31 values:
+The current public input vector has 33 values:
 
 ```text
 payouts[0..7]
@@ -91,4 +81,13 @@ rhoTau[27]
 disputeId[28]
 finalStateRoot[29]
 rewardBudget[30]
+gammaScaled[31]
+randomSeed[32]
 ```
+
+## Current Scope
+
+This is a reward sidecar relation for an unmodified MACI flow. MACI message
+processing and tally correctness are handled by the pinned official MACI
+baseline. The private `nonces[i]` values are MACI command-salt-derived material
+in the full MACI experiment.

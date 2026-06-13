@@ -118,12 +118,18 @@ finalRewardStateRoot = MerkleRoot(leaf_1, ..., leaf_N)
 ```
 
 The reward circuit privately opens `nonce_i` to `nonceCommitment_i`, verifies
-Merkle inclusion against `finalRewardStateRoot`, computes fixed-budget lottery
-peer-prediction rewards, and exposes payouts plus `pollId` and
-`finalRewardStateRoot` as public signals. The current full MACI experiment uses
-each encrypted `VoteCommand.salt` as the private reward nonce, and the circuit
-also exposes recipient addresses so the payout contract can bind claims to the
+Merkle inclusion against `finalRewardStateRoot`, computes coordinate-wise
+Bernoulli peer-prediction lottery rewards, and exposes payouts plus `pollId`,
+`finalRewardStateRoot`, `gammaScaled`, and the external `randomSeed` as public
+signals. The current full MACI experiment uses each encrypted
+`VoteCommand.salt` as private sidecar nonce material, and the circuit also
+exposes recipient addresses so the payout contract can bind claims to the
 proof.
+
+The reward lottery seed is fixed by a local commit-reveal flow: the registry
+requires a seed commitment before root registration, then accepts the reveal
+after the root is registered. This is an experimental non-grinding interface,
+not a production randomness policy.
 
 This remains experimental. The MACI baseline is real; the reward sidecar binding
 is a PoC adapter and is not a production security claim.
@@ -170,20 +176,25 @@ Latest observed Anvil run:
 - Total spent voice credits: `648`.
 - Derived reports: `[1, 0, 1, 1, 0, 0, 1, 0]`.
 - Final reward sidecar root:
-  `9085344411136641853726403055769717154468974807716947437918939447230816557425`.
+  `12838686614958814108589935440863903919731410615391099499719679198902005592710`.
 - Reward nonce source: `MACI VoteCommand.salt`.
-- Reward budget: `3000000`.
-- Reward mode: fixed-budget lottery with `rhoTau = 3000000`.
+- Reward budget cap: `24000000`.
+- Reward mode: coordinate-wise Bernoulli lottery with `rhoTau = 3000000` and
+  `gamma = 0.05`.
 - Stake design: uniform public stake `10` for all eight voters.
-- Lottery wins: `[0, 0, 1, 0, 1, 0, 0, 0]`.
-- Fixed-budget lottery payouts: `[499, 499, 1498501, 499, 1498501, 499, 499, 503]`.
-- Sample claim index: `0`.
-- MACI proof phase: `101229 ms`.
-- Reward proof phase: `2970 ms`.
-- Reward root registration gas: `93334`.
+- Lottery wins: `[0, 0, 1, 0, 0, 0, 0, 0]`.
+- Bernoulli payouts: `[0, 0, 3000000, 0, 0, 0, 0, 0]`.
+- Total payout in this draw: `3000000`.
+- Maximum funded exposure: `24000000`.
+- Sample claim index: `2`.
+- MACI proof phase: `124084 ms`.
+- Reward proof phase: `4618 ms`.
+- Seed commitment gas: `49899`.
+- Reward root registration gas: `98837`.
+- Seed reveal gas: `58248`.
 - Reward pool funding gas: `47396`.
-- Reward finalization gas: `671978`.
-- Reward claim gas: `30684`.
+- Reward finalization gas: `557212`.
+- Reward claim gas: `30707`.
 
 Generated reward artifacts are under `poc/artifacts/full_maci_reward/` for the
 Hardhat harness and `poc/artifacts/full_maci_reward_anvil/` for Anvil. They are

@@ -461,7 +461,8 @@ describe("full MACI plus reward sidecar E2E", function test() {
       smoothing: "1",
       kappa: "100",
       scale: "1000",
-      rewardBudget: "3000000",
+      rhoTau: "3000000",
+      rewardBudget: "24000000",
       nonceLabel: "full-maci-reward-sidecar",
     };
     const sidecarFile = path.join(OUTPUT_ROOT, "sidecar_input.json");
@@ -504,10 +505,19 @@ describe("full MACI plus reward sidecar E2E", function test() {
     const poolAddress = await pool.getAddress();
 
     await waitTx(
+      "reward.commitRandomSeed",
+      await registry.commitRandomSeed(disputeId, fixture.seedCommitment),
+    );
+    await waitTx(
       "reward.registerFinalState",
       await registry.registerFinalState(disputeId, finalRewardStateRoot, BigInt(tallyData.results.tally[1])),
     );
-    await waitTx("reward.fundDispute", await pool.fundDispute(disputeId, { value: totalPayout }));
+    await waitTx(
+      "reward.revealRandomSeed",
+      await registry.revealRandomSeed(disputeId, fixture.seedPreimage, fixture.seedSalt),
+    );
+    const maxExposure = BigInt(fixture.payoutCount) * BigInt(fixture.publicSignals[27]);
+    await waitTx("reward.fundDispute", await pool.fundDispute(disputeId, { value: maxExposure }));
     await waitTx(
       "reward.finalizeRewards",
       await pool.finalizeRewards(
@@ -537,12 +547,15 @@ describe("full MACI plus reward sidecar E2E", function test() {
       reports: extractedReports,
       stakeDesign: "uniform",
       stakes: STAKES,
-      rewardMode: "fixed-budget lottery",
+      rewardMode: "coordinate-wise Bernoulli lottery",
       rhoTau: "3000000",
+      gammaScaled: fixture.publicSignals[31],
       lotteryWins: rewardSummary.lotteryWins,
       finalRewardStateRoot: fixture.finalStateRoot,
       rewardNonceSource: "maci-vote-command-salt",
       rewardBudget: sidecar.rewardBudget,
+      maxExposure: maxExposure.toString(),
+      randomSeed: fixture.randomSeed,
       payouts: fixture.amounts,
       paidRecipientIndices: fixture.amounts
         .map((amount: string, index: number) => (BigInt(amount) > 0n ? index : -1))
@@ -557,7 +570,9 @@ describe("full MACI plus reward sidecar E2E", function test() {
         reward: fixture.proofGenerationMs,
       },
       rewardGas: {
+        commitRandomSeed: Number(rewardTransactions["reward.commitRandomSeed"].gas),
         registerFinalState: Number(rewardTransactions["reward.registerFinalState"].gas),
+        revealRandomSeed: Number(rewardTransactions["reward.revealRandomSeed"].gas),
         fundDispute: Number(rewardTransactions["reward.fundDispute"].gas),
         finalizeRewards: Number(rewardTransactions["reward.finalizeRewards"].gas),
         claim: Number(rewardTransactions["reward.claim"].gas),

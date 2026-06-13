@@ -15,6 +15,8 @@ contract IntegratedRewardPool {
     uint256 public constant POLL_ID_SIGNAL_INDEX = 28;
     uint256 public constant FINAL_REWARD_STATE_ROOT_SIGNAL_INDEX = 29;
     uint256 public constant REWARD_BUDGET_SIGNAL_INDEX = 30;
+    uint256 public constant GAMMA_SCALED_SIGNAL_INDEX = 31;
+    uint256 public constant RANDOM_SEED_SIGNAL_INDEX = 32;
     uint256 public constant DISPUTE_ID_SIGNAL_INDEX = POLL_ID_SIGNAL_INDEX;
     uint256 public constant FINAL_STATE_ROOT_SIGNAL_INDEX = FINAL_REWARD_STATE_ROOT_SIGNAL_INDEX;
 
@@ -86,16 +88,20 @@ contract IntegratedRewardPool {
         require(dispute.remainingBudget > 0, "unfunded dispute");
         require(recipients.length == amounts.length, "length mismatch");
         require(amounts.length == PAYOUT_COUNT, "wrong payout count");
-        require(publicSignals.length > REWARD_BUDGET_SIGNAL_INDEX, "missing public signals");
+        require(publicSignals.length > RANDOM_SEED_SIGNAL_INDEX, "missing public signals");
         require(publicSignals[POLL_ID_SIGNAL_INDEX] == disputeId, "poll signal mismatch");
 
-        uint256 finalStateRoot = _requireFinalStateRoot(disputeId);
+        (uint256 finalStateRoot, uint256 randomSeed) = _requireFinalState(disputeId);
         require(publicSignals[FINAL_REWARD_STATE_ROOT_SIGNAL_INDEX] == finalStateRoot, "root signal mismatch");
+        require(publicSignals[RANDOM_SEED_SIGNAL_INDEX] == randomSeed, "seed signal mismatch");
+        require(
+            dispute.remainingBudget >= PAYOUT_COUNT * publicSignals[RHO_TAU_SIGNAL_INDEX],
+            "underfunded max exposure"
+        );
         require(verifier.verifyProof(proof, publicSignals), "invalid proof");
 
         uint256 totalPayout = _recordPayouts(disputeId, recipients, amounts, publicSignals);
 
-        require(totalPayout == publicSignals[REWARD_BUDGET_SIGNAL_INDEX], "budget signal mismatch");
         require(totalPayout <= dispute.remainingBudget, "insufficient budget");
         dispute.remainingBudget -= totalPayout;
         dispute.rewardsFinalized = true;
@@ -103,12 +109,15 @@ contract IntegratedRewardPool {
         emit RewardsFinalized(disputeId, finalStateRoot, totalPayout);
     }
 
-    function _requireFinalStateRoot(uint256 disputeId) internal view returns (uint256 finalStateRoot) {
+    function _requireFinalState(uint256 disputeId) internal view returns (uint256 finalStateRoot, uint256 randomSeed) {
         bool finalStateFinalized;
         bool maciTallyVerified;
-        (finalStateRoot,, maciTallyVerified, finalStateFinalized) = registry.finalStates(disputeId);
+        bool randomSeedFinalized;
+        (finalStateRoot,,, randomSeed, maciTallyVerified, finalStateFinalized, randomSeedFinalized) =
+            registry.finalStates(disputeId);
         require(finalStateFinalized, "final state missing");
         require(maciTallyVerified, "maci tally unverified");
+        require(randomSeedFinalized, "random seed missing");
     }
 
     function _recordPayouts(
@@ -120,6 +129,10 @@ contract IntegratedRewardPool {
         for (uint256 i = 0; i < amounts.length; i++) {
             require(recipients[i] != address(0), "zero recipient");
             require(publicSignals[i] == amounts[i], "payout signal mismatch");
+            require(
+                amounts[i] == 0 || amounts[i] == publicSignals[RHO_TAU_SIGNAL_INDEX],
+                "non-bernoulli payout"
+            );
             require(
                 publicSignals[RECIPIENT_SIGNAL_OFFSET + i] == uint256(uint160(recipients[i])),
                 "recipient signal mismatch"

@@ -3,9 +3,10 @@
 const crypto = require("crypto");
 const fs = require("fs");
 const path = require("path");
+const ethers = require("ethers");
 const {
   buildFinalState,
-  computeFixedBudgetLotteryPayouts,
+  computeBernoulliLotteryPayouts,
 } = require("../reference/reward_model");
 
 const FIELD_PRIME =
@@ -37,6 +38,26 @@ function recipientAddresses() {
   ];
 }
 
+function gammaScaled(numerator, denominator, bits = 32n) {
+  return (BigInt(numerator) * (1n << bits)) / BigInt(denominator);
+}
+
+function randomSeedMaterial(disputeId, finalStateRoot) {
+  const seedPreimage = fieldElement("zk-peer-v2 external lottery seed");
+  const salt =
+    "0x" + crypto.createHash("sha256").update("zk-peer-v2 external lottery salt").digest("hex");
+  const seedCommitment = ethers.utils.solidityKeccak256(
+    ["uint256", "bytes32"],
+    [seedPreimage.toString(), salt],
+  );
+  const randomSeed =
+    BigInt(ethers.utils.solidityKeccak256(
+      ["uint256", "bytes32", "uint256", "uint256"],
+      [seedPreimage.toString(), salt, disputeId.toString(), finalStateRoot.toString()],
+    )) % FIELD_PRIME;
+  return { seedPreimage, salt, seedCommitment, randomSeed };
+}
+
 function v2Inputs() {
   return {
     reports: [1, 1, 0, 1, 0, 0, 1, 0],
@@ -51,30 +72,37 @@ function v2Inputs() {
     kappa: 100n,
     scale: 1_000n,
     rhoTau: 3_000_000n,
-    rewardBudget: 3_000_000n,
+    rewardBudget: 24_000_000n,
+    gammaScaled: gammaScaled(5n, 100n),
   };
 }
 
 async function main() {
   const inputs = v2Inputs();
   const finalState = await buildFinalState(inputs);
+  const seed = randomSeedMaterial(inputs.disputeId, finalState.finalStateRoot);
   const sidecarInputs = { ...inputs, nonceCommitments: finalState.nonceCommitments };
-  const rewardInputs = { ...sidecarInputs, stateRoot: finalState.finalStateRoot };
-  const allocation = await computeFixedBudgetLotteryPayouts(rewardInputs);
+  const rewardInputs = {
+    ...sidecarInputs,
+    stateRoot: finalState.finalStateRoot,
+    randomSeed: seed.randomSeed,
+  };
+  const allocation = await computeBernoulliLotteryPayouts(rewardInputs);
   const rewardWitness = allocation.rewardWitness;
   const payouts = allocation.payouts.map((payout) => payout.toString());
-  const allocationRemainders = [...allocation.allocationRemainders, 0n].map((remainder) =>
-    remainder.toString()
-  );
 
-  if (allocation.payouts.reduce((acc, payout) => acc + payout, 0n) !== inputs.rewardBudget) {
-    throw new Error("deterministic v2 vector does not distribute the fixed reward budget");
+  if (!allocation.payouts.every((payout) => payout === 0n || payout === inputs.rhoTau)) {
+    throw new Error("deterministic v2 vector has a non-Bernoulli payout");
   }
 
   const vector = {
     version: "v2",
-    description: "Fixed-budget lottery reward vector bound to a MACI reward sidecar state root.",
+    description: "Coordinate-wise Bernoulli lottery reward vector bound to a MACI reward sidecar state root.",
     inputs: rewardInputs,
+    seedPreimage: seed.seedPreimage.toString(),
+    seedSalt: seed.salt,
+    seedCommitment: seed.seedCommitment,
+    randomSeed: seed.randomSeed.toString(),
     nonceCommitments: finalState.nonceCommitments.map((commitment) => commitment.toString()),
     leaves: finalState.leaves.map((leaf) => leaf.toString()),
     merklePaths: finalState.paths.map((pathData) => ({
@@ -86,16 +114,17 @@ async function main() {
     lotteryBits: allocation.lotteryBits,
     lotteryScale: allocation.lotteryScale.toString(),
     rhoTau: allocation.rhoTau.toString(),
+    gammaScaled: allocation.gammaScaled.toString(),
+    upperThreshold: allocation.upperThreshold.toString(),
     drawHashes: allocation.drawHashes.map((hash) => hash.toString()),
     draws: allocation.draws.map((draw) => draw.toString()),
     wins: allocation.wins.map((win) => win.toString()),
-    lotteryTentativePayouts: allocation.lotteryTentativePayouts.map((payout) => payout.toString()),
     expectedRewards: rewardWitness.map((reward) => reward.scaled.toString()),
     rewardRemainders: rewardWitness.map((reward) => reward.remainder.toString()),
-    allocationBaseline: allocation.allocationBaseline.toString(),
-    allocationScores: allocation.allocationScores.map((score) => score.toString()),
-    totalAllocationScore: allocation.totalAllocationScore.toString(),
-    allocationRemainders,
+    rawThresholds: allocation.rawThresholds.map((threshold) => threshold.toString()),
+    thresholdRemainders: allocation.thresholdRemainders.map((remainder) => remainder.toString()),
+    thresholds: allocation.thresholds.map((threshold) => threshold.toString()),
+    expectedPayoutNumerator: allocation.expectedPayoutNumerator.toString(),
     payouts,
   };
 
@@ -108,7 +137,8 @@ async function main() {
     merklePathElements: vector.merklePaths.map((pathData) => pathData.pathElements),
     expectedScaled: vector.expectedRewards,
     rewardRemainders: vector.rewardRemainders,
-    allocationRemainders: vector.allocationRemainders,
+    rawThresholds: vector.rawThresholds,
+    thresholdRemainders: vector.thresholdRemainders,
     payouts,
     recipients: inputs.recipients,
     stakes: inputs.stakes,
@@ -119,11 +149,13 @@ async function main() {
     disputeId: inputs.disputeId,
     finalStateRoot: finalState.finalStateRoot,
     rewardBudget: inputs.rewardBudget,
+    gammaScaled: inputs.gammaScaled,
+    randomSeed: seed.randomSeed,
   };
 
-  writeJson(path.join(__dirname, "../vectors/v2/reward_fixed_budget_state.json"), vector);
+  writeJson(path.join(__dirname, "../vectors/v2/reward_bernoulli_state.json"), vector);
   writeJson(path.join(__dirname, "../artifacts/v2/input.json"), circuitInput);
-  console.log("Wrote vectors/v2/reward_fixed_budget_state.json");
+  console.log("Wrote vectors/v2/reward_bernoulli_state.json");
   console.log("Wrote artifacts/v2/input.json");
 }
 

@@ -5,6 +5,7 @@ const path = require("path");
 const crypto = require("crypto");
 const {
   buildFinalState,
+  computeBernoulliLotteryPayouts,
   computeFixedBudgetLotteryPayouts,
 } = require("../reference/reward_model");
 
@@ -17,11 +18,14 @@ const DEFAULT_STAKES = Array.from({ length: N }, () => 10n);
 const DEFAULT_BUDGET = 3_000_000n;
 const DEFAULT_RHO_TAU = 3_000_000n;
 const EXPOSURE_RHO_TAU = 25_000_000n;
+const DEFAULT_GAMMA_SCALED = (5n * (1n << 32n)) / 100n;
 const LOTTERY_SAMPLE_COUNT = 64;
 const LOTTERY_CI_SAMPLE_COUNT = Number(process.env.REWARD_LOTTERY_CI_SAMPLES || 512);
 const FULL_MACI_E2E_FILE = path.join(DATA_DIR, "full_maci_reward_anvil_latest.json");
 const DEFAULT_REWARD_GAS = {
+  commitRandomSeed: 49_899,
   registerFinalState: 93_334,
+  revealRandomSeed: 58_248,
   fundDispute: 47_396,
   finalizeRewards: 671_978,
   claim: 30_684,
@@ -70,6 +74,16 @@ function decimal(num, den, digits = 6) {
 
 function decimalFromNumber(value, digits = 6) {
   return value.toFixed(digits);
+}
+
+function decimalFixed(num, den, digits = 8) {
+  num = BigInt(num);
+  den = BigInt(den);
+  const scale = 10n ** BigInt(digits);
+  const value = (num * scale) / den;
+  const whole = value / scale;
+  const frac = (value % scale).toString().padStart(digits, "0");
+  return `${whole}.${frac}`;
 }
 
 function readJsonIfExists(file) {
@@ -498,12 +512,73 @@ async function runExposureSanity(profiles) {
   return rows;
 }
 
+async function runProbabilityExposure(profiles) {
+  const rows = [];
+  const gammaConfigs = [
+    { label: "0.02", gammaScaled: (2n * (1n << 32n)) / 100n },
+    { label: "0.05", gammaScaled: DEFAULT_GAMMA_SCALED },
+    { label: "0.10", gammaScaled: (10n * (1n << 32n)) / 100n },
+  ];
+  for (const profile of profiles) {
+    const common = baseInputs(profile);
+    const context = {
+      stateRoot: fieldElement(`${profile.name} probability exposure root`),
+      randomSeed: fieldElement(`${profile.name} probability exposure random seed`),
+    };
+    for (const { label, gammaScaled } of gammaConfigs) {
+      const original = await computeBernoulliLotteryPayouts({
+        ...common,
+        ...context,
+        smoothing: 1n,
+        kappa: 100n,
+        gammaScaled,
+        rewardBudget: BigInt(N) * common.rhoTau,
+      });
+      for (let voterIndex = 0; voterIndex < N; voterIndex += 1) {
+        const flippedReports = [...profile.reports];
+        flippedReports[voterIndex] = flippedReports[voterIndex] === 1 ? 0 : 1;
+        const flipped = await computeBernoulliLotteryPayouts({
+          ...baseInputs({ ...profile, reports: flippedReports }),
+          ...context,
+          smoothing: 1n,
+          kappa: 100n,
+          gammaScaled,
+          rewardBudget: BigInt(N) * common.rhoTau,
+        });
+        const direct = new Set(directRingAffectedIndices(common.peerIndices, voterIndex));
+        for (let coordinateIndex = 0; coordinateIndex < N; coordinateIndex += 1) {
+          const q0 = original.thresholds[coordinateIndex];
+          const q1 = flipped.thresholds[coordinateIndex];
+          const delta = q1 >= q0 ? q1 - q0 : q0 - q1;
+          rows.push({
+            profile: profile.name,
+            gamma: label,
+            gammaScaled: gammaScaled.toString(),
+            voterIndex,
+            coordinateIndex,
+            directRingCoordinate: direct.has(coordinateIndex) ? 1 : 0,
+            originalReport: profile.reports[voterIndex],
+            flippedReport: flippedReports[voterIndex],
+            originalQ: decimalFixed(q0, original.lotteryScale),
+            flippedQ: decimalFixed(q1, flipped.lotteryScale),
+            absDeltaQ: decimalFixed(delta, original.lotteryScale),
+            deltaThreshold: delta.toString(),
+          });
+        }
+      }
+    }
+  }
+  return rows;
+}
+
 function writeE2EOverhead() {
   const latest = readJsonIfExists(FULL_MACI_E2E_FILE) || {};
   const proofTimes = latest.proofTimesMs || {};
   const rewardGas = latest.rewardGas || DEFAULT_REWARD_GAS;
   writeCsv(path.join(DATA_DIR, "gas_breakdown.csv"), [
+    { operation: "commit", gas: rewardGas.commitRandomSeed || 0 },
     { operation: "register", gas: rewardGas.registerFinalState },
+    { operation: "reveal", gas: rewardGas.revealRandomSeed || 0 },
     { operation: "fund", gas: rewardGas.fundDispute },
     { operation: "finalize", gas: rewardGas.finalizeRewards },
     { operation: "claim", gas: rewardGas.claim },
@@ -525,8 +600,22 @@ function writeE2EOverhead() {
     },
     {
       section: "reward_gas",
+      metric: "Commit seed",
+      value: rewardGas.commitRandomSeed || "",
+      unit: "gas",
+      source: "full_maci_reward_anvil_latest",
+    },
+    {
+      section: "reward_gas",
       metric: "Register root",
       value: rewardGas.registerFinalState,
+      unit: "gas",
+      source: "full_maci_reward_anvil_latest",
+    },
+    {
+      section: "reward_gas",
+      metric: "Reveal seed",
+      value: rewardGas.revealRandomSeed || "",
       unit: "gas",
       source: "full_maci_reward_anvil_latest",
     },
@@ -574,7 +663,9 @@ function writeOperatingCostProjection() {
   for (const { network, gasPriceGwei } of networks) {
     for (const voters of voterCounts) {
       const finalizeGas = finalizeBaseGas + perRecipientFinalizeGas * voters;
-      const adminGas = Number(rewardGas.registerFinalState) + Number(rewardGas.fundDispute) + finalizeGas;
+      const seedGas = Number(rewardGas.commitRandomSeed || 0) + Number(rewardGas.revealRandomSeed || 0);
+      const adminGas =
+        seedGas + Number(rewardGas.registerFinalState) + Number(rewardGas.fundDispute) + finalizeGas;
       const allClaimGas = Number(rewardGas.claim) * voters;
       const totalGas = adminGas + allClaimGas;
       const ethCost = totalGas * gasPriceGwei * 1e-9;
@@ -584,6 +675,8 @@ function writeOperatingCostProjection() {
         gasPriceGwei,
         ethUsd,
         registerGas: rewardGas.registerFinalState,
+        commitSeedGas: rewardGas.commitRandomSeed || 0,
+        revealSeedGas: rewardGas.revealRandomSeed || 0,
         fundGas: rewardGas.fundDispute,
         finalizeBaseGas,
         perRecipientFinalizeGas,
@@ -605,11 +698,11 @@ function writeProofShape() {
   writeCsv(path.join(DATA_DIR, "proof_shape.csv"), [
     { metric: "voters", value: 8 },
     { metric: "merkle_depth", value: 3 },
-    { metric: "public_inputs", value: 31 },
-    { metric: "private_inputs", value: 88 },
-    { metric: "constraints", value: 25512 },
-    { metric: "allocation_mode", value: "fixed_budget_lottery" },
-    { metric: "seed_mode", value: "poseidon_fold" },
+    { metric: "public_inputs", value: 33 },
+    { metric: "private_inputs", value: 96 },
+    { metric: "constraints", value: 26080 },
+    { metric: "allocation_mode", value: "coordinate_bernoulli_lottery" },
+    { metric: "seed_mode", value: "external_commit_reveal_seed" },
   ]);
 }
 
@@ -644,6 +737,7 @@ async function main() {
   const rewardRows = await runRewardTable(profiles);
   const lotteryConfidenceRows = await runLotteryConfidence(profiles);
   const exposureRows = await runExposureSanity(profiles);
+  const probabilityExposureRows = await runProbabilityExposure(profiles);
 
   writeCsv(path.join(DATA_DIR, "parameter_sweep.csv"), sweepRows);
   writeCsv(path.join(DATA_DIR, "budget_allocation.csv"), allocationRows);
@@ -651,21 +745,25 @@ async function main() {
   writeCsv(path.join(DATA_DIR, "reward_sensitivity.csv"), rewardRows);
   writeCsv(path.join(DATA_DIR, "lottery_confidence.csv"), lotteryConfidenceRows);
   writeCsv(path.join(DATA_DIR, "exposure_sanity.csv"), exposureRows);
+  writeCsv(path.join(DATA_DIR, "exposure_probability_sanity.csv"), probabilityExposureRows);
   writeE2EOverhead();
   writeOperatingCostProjection();
   writeProofShape();
   writeJson(path.join(DATA_DIR, "experiment_manifest.json"), {
     generatedAt: new Date().toISOString(),
     voters: N,
-    rewardBudget: DEFAULT_BUDGET.toString(),
-    allocationMode: "fixed_total_budget",
+    rewardBudget: (BigInt(N) * DEFAULT_RHO_TAU).toString(),
+    allocationMode: "coordinate_bernoulli_lottery",
+    fixedBudgetBaseline: DEFAULT_BUDGET.toString(),
     allocationBaseline: "scale",
-    lotteryMode: "fixed-budget lottery; winners are sampled by Poseidon(seed, i), then payouts are normalized to rewardBudget",
+    lotteryMode: "current circuit uses independent coordinate-wise Bernoulli payouts in {0, rhoTau}; fixed-budget data files are comparison baselines",
     rhoTau: DEFAULT_RHO_TAU.toString(),
+    gammaScaled: DEFAULT_GAMMA_SCALED.toString(),
     lotterySamples: LOTTERY_SAMPLE_COUNT,
     lotteryConfidenceSamples: LOTTERY_CI_SAMPLE_COUNT,
     exposureRows: exposureRows.length,
     exposureMaxChangedPayoutCount: Math.max(...exposureRows.map((row) => row.changedPayoutCount)),
+    probabilityExposureRows: probabilityExposureRows.length,
     exposureRhoTau: EXPOSURE_RHO_TAU.toString(),
     stakeDesign: "uniform stakes for report-pattern experiments; stake effects are isolated in stake_concentration.csv",
     sweepRows: sweepRows.length,
@@ -676,12 +774,15 @@ async function main() {
       stakes: profile.stakes.map((stake) => stake.toString()),
     })),
     notes: [
-      "Payouts are normalized to a fixed reward budget; total payout equals rewardBudget.",
-      "Reward sensitivity is plotted as average max_i P_i / rewardBudget over deterministic lottery samples.",
+      "Current integrated payouts are Bernoulli: each public payout is either 0 or rhoTau.",
+      "Total Bernoulli payout is a random variable; the pool funds N*rhoTau maximum exposure.",
+      "Fixed-budget allocation files remain as a legacy exact-budget comparison baseline.",
+      "Reward sensitivity is plotted as average max_i P_i / baseline budget over deterministic lottery samples for the legacy comparison figure.",
       "Lottery confidence data reports 5th, 50th, and 95th percentile bands over deterministic lottery samples.",
       "A scale-sized allocation baseline keeps the denominator nonzero for all-zero-score profiles.",
-      "Lottery seed uses a Poseidon fold over poll id, final reward root, and included nonces.",
-      "Exposure sanity flips one report at a time; current public payout transcript exposure is conservatively documented as D=8.",
+      "Current lottery seed uses Poseidon(poll id, final reward root, external randomSeed).",
+      "Exposure sanity flips one report at a time; probability exposure records q_j movement rather than only final sampled payouts.",
+      "Probability exposure sanity records coordinate-wise q_j changes under the Bernoulli reward rule.",
       "The integrated MACI/reward flow remains fixed at N=8; capacity-utilization data is generated separately with N_max=64.",
     ],
   });

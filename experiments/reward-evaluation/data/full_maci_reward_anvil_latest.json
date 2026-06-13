@@ -27,70 +27,70 @@
     "10",
     "10"
   ],
-  "rewardMode": "fixed-budget lottery",
+  "rewardMode": "coordinate-wise Bernoulli lottery",
   "rhoTau": "3000000",
+  "gammaScaled": "214748364",
   "lotteryWins": [
     "0",
     "0",
     "1",
     "0",
-    "1",
+    "0",
     "0",
     "0",
     "0"
   ],
-  "finalRewardStateRoot": "426932089057462803361229057099226512330903834465667996684422281122836954804",
+  "finalRewardStateRoot": "12838686614958814108589935440863903919731410615391099499719679198902005592710",
   "rewardNonceSource": "maci-vote-command-salt",
-  "rewardBudget": "3000000",
+  "rewardBudget": "24000000",
+  "maxExposure": "24000000",
+  "randomSeed": "6705659891166618364751162944068305534263833670189337850680037490901114852",
   "payouts": [
-    "499",
-    "499",
-    "1498501",
-    "499",
-    "1498501",
-    "499",
-    "499",
-    "503"
+    "0",
+    "0",
+    "3000000",
+    "0",
+    "0",
+    "0",
+    "0",
+    "0"
   ],
   "paidRecipientIndices": [
-    0,
-    1,
-    2,
-    3,
-    4,
-    5,
-    6,
-    7
+    2
   ],
   "totalPayout": "3000000",
-  "sampleClaimIndex": 0,
-  "sampleClaimant": "0xf17f52151EbEF6C7334FAD080c5704D77216b732",
-  "sampleClaimableBefore": "499",
-  "poolBalanceAfterSampleClaim": "2999501",
+  "sampleClaimIndex": 2,
+  "sampleClaimant": "0x821aEa9a577a9b44299B9c15c88cf3087F3b5544",
+  "sampleClaimableBefore": "3000000",
+  "poolBalanceAfterSampleClaim": "21000000",
   "proofTimesMs": {
-    "maci": 86652,
-    "reward": 3043
+    "maci": 124084,
+    "reward": 4618
   },
   "rewardGas": {
-    "registerFinalState": 93322,
+    "commitRandomSeed": 49899,
+    "registerFinalState": 98837,
+    "revealRandomSeed": 58248,
     "fundDispute": 47396,
-    "finalizeRewards": 671990,
-    "claim": 30684
+    "finalizeRewards": 557212,
+    "claim": 30707
   },
   "rewardDeployGas": {
-    "RewardGroth16Verifier": 957632,
+    "RewardGroth16Verifier": 998795,
     "RewardVerifierAdapter": 328329,
-    "FinalStateRegistry": 365305,
-    "IntegratedRewardPool": 1221211
+    "FinalStateRegistry": 652257,
+    "IntegratedRewardPool": 1330130
   },
   "rewardTxHashes": {
-    "RewardGroth16VerifierDeploy": "0xde94e898e08592ee1510902291155d175b55cab286c4e2674d82bc925124a421",
-    "RewardVerifierAdapterDeploy": "0xc78df549fb1e9874edfd034c2e3c7c76915100a28d880f29c67063cc18941a2f",
-    "FinalStateRegistryDeploy": "0x805cde7571764c8f154d0e0515941ac45b06e55bf10bf7757ba6dc5a482532e1",
-    "IntegratedRewardPoolDeploy": "0x4ecf33a2d46193650a155e2087af81bc475c84aa330c70fd7c602d2090eb6736",
-    "reward.registerFinalState": "0xbfc4be21369262537f29c8413d22fa75d17c44eaf5f9acf2974e23ed75ede898",
-    "reward.fundDispute": "0xf533b557d5f890993b88f48c18b898331851842edef4ef6baa04e79153755a8b",
-    "reward.finalizeRewards": "0x97f6ad3742fdccfe153e9dd1931106a003a663b1d91662b481adad668737833e",
-    "reward.claim": "0xafc2d36f85f1d451a5eb0392c2ae345dba761a96616238e19611f11ba31503a0"
+    "RewardGroth16VerifierDeploy": "0x7bcf6eeb81b31b1d17f7ce8fb764abc915329e5e8d5834f637c4effd3f7eb483",
+    "RewardVerifierAdapterDeploy": "0x1a0cb9d23ca864a5b4c71178024a8203112e7aad9baccc25941e7c14bd2c4e2f",
+    "FinalStateRegistryDeploy": "0xb4cd192f0c4575470fe4876f403cab61368ff541b6ab7344cd2e8c0f8d5aefe1",
+    "IntegratedRewardPoolDeploy": "0xc135bd9536e7e20339bf0c7d8c8bc050b4b62943a4ca07bffcd929bc57197e8b",
+    "reward.commitRandomSeed": "0xfb405ae8762165bbe500eb244b4d158353eb1b6c56dd8fa855dc0dec6da9f3de",
+    "reward.registerFinalState": "0x77caf633dd4da4ef5664ff8fd6a8c987e5e6e9c66f66b0afd4d7c37499f3eecd",
+    "reward.revealRandomSeed": "0x6601a1b3915ac172a94a482f6994563a6293e376949e9d869518b135b32c2868",
+    "reward.fundDispute": "0x20da3f7d348b44013298fcc1ef812afd32facd720aa146a1ff92f60c37d5d1f8",
+    "reward.finalizeRewards": "0x9af274fcd37805025aa48fabcead1f2dce006debf4975c738a0631961e3c0a79",
+    "reward.claim": "0xced0f61ec155be89e2e75fc9b5b575db15381388d3453653af13a9cc25bc219d"
   }
 }
