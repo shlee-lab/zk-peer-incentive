@@ -6,6 +6,7 @@ const {
   buildFinalState,
   cmp,
   computeBernoulliLotteryPayouts,
+  computeLotteryThreshold,
   computeLotteryPayouts,
   computeRewards,
   div,
@@ -18,6 +19,8 @@ const {
   verifyLotteryPayouts,
   verifyScaledPayouts,
 } = require("./reward_model");
+
+const LOTTERY_SCALE_32 = 1n << 32n;
 
 function absDiff(a, b) {
   const diff = fraction(a.num * b.den - b.num * a.den, a.den * b.den);
@@ -135,6 +138,52 @@ async function testLotteryPayoutsAndTamperDetection() {
   assert.strictEqual(await verifyLotteryPayouts(inputs, tampered), false);
 }
 
+function testFloorAdjustedThresholds() {
+  const rhoTau = 1_000_000n;
+  const psiScaled = LOTTERY_SCALE_32 / 10n;
+  const slope = LOTTERY_SCALE_32 - 2n * psiScaled;
+
+  const zero = computeLotteryThreshold({
+    scoreScaled: 0n,
+    rhoTau,
+    psiScaled,
+    lotteryMode: "floor_adjusted",
+  });
+  assert.strictEqual(zero.threshold, psiScaled);
+
+  const max = computeLotteryThreshold({
+    scoreScaled: rhoTau,
+    rhoTau,
+    psiScaled,
+    lotteryMode: "floor_adjusted",
+  });
+  assert.strictEqual(max.threshold, LOTTERY_SCALE_32 - psiScaled);
+
+  const half = computeLotteryThreshold({
+    scoreScaled: rhoTau / 2n,
+    rhoTau,
+    psiScaled,
+    lotteryMode: "floor_adjusted",
+  });
+  assert.strictEqual(half.threshold, psiScaled + slope / 2n);
+  assert.strictEqual(half.rhoEff, (slope * rhoTau) / LOTTERY_SCALE_32);
+
+  const baseline = computeLotteryThreshold({
+    scoreScaled: rhoTau / 2n,
+    rhoTau,
+    lotteryMode: "baseline",
+  });
+  assert.strictEqual(baseline.threshold, LOTTERY_SCALE_32 / 2n);
+  assert.throws(() =>
+    computeLotteryThreshold({
+      scoreScaled: rhoTau / 2n,
+      rhoTau,
+      psiScaled,
+      lotteryMode: "baseline",
+    }),
+  );
+}
+
 async function testMerkleFinalStateVector() {
   const vector = require("../vectors/v2/reward_bernoulli_state.json");
   const inputs = vector.inputs;
@@ -158,6 +207,16 @@ async function testMerkleFinalStateVector() {
     allocation.thresholds.map((threshold) => threshold.toString()),
     vector.thresholds,
   );
+  assert.deepStrictEqual(
+    allocation.adjustedThresholds.map((threshold) => threshold.toString()),
+    vector.adjustedThresholds,
+  );
+  assert.deepStrictEqual(
+    allocation.adjustedThresholdRemainders.map((remainder) => remainder.toString()),
+    vector.adjustedThresholdRemainders,
+  );
+  assert.strictEqual(allocation.lotteryMode, vector.lotteryMode);
+  assert.strictEqual(allocation.rhoEff.toString(), vector.rhoEff);
   assert.deepStrictEqual(allocation.payouts.map((payout) => payout.toString()), vector.payouts);
   assert.strictEqual(await verifyBernoulliLotteryPayouts(inputs, vector.payouts), true);
 
@@ -197,6 +256,7 @@ async function run() {
   testMismatchBias();
   testSelfCalibrationBySplitting();
   await testLotteryPayoutsAndTamperDetection();
+  testFloorAdjustedThresholds();
   await testMerkleFinalStateVector();
   console.log("All reward model tests passed.");
 }

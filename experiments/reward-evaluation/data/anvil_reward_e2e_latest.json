@@ -1,65 +1,69 @@
 {
-  "generatedAt": "2026-06-13T03:14:36.291Z",
+  "generatedAt": "2026-06-14T03:20:55.723Z",
   "rpcUrl": "http://127.0.0.1:8545",
   "deployer": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
   "deployments": {
     "Groth16Verifier": {
       "address": "0x5FbDB2315678afecb367f032d93F642f64180aa3",
-      "tx": "0x7ffe78feb6a585ff6b547a8261a5621f21b70929f984db28daf4d0201f76b32f",
-      "gas": "998795"
+      "tx": "0x1af7be72b0978d27dee303082df775e285f585a53e337bad0201146b5855e5e1",
+      "gas": "1018837"
     },
     "RewardVerifierAdapter": {
       "address": "0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512",
-      "tx": "0xb3ac2cfceb24c8874444a79250baa47cf475c5914d94ff46313a490f7819aa32",
+      "tx": "0xf21de722fcce00ae67eb35131b82ccbba51ad17388fff4f82f41397104b02638",
       "gas": "328329"
     },
     "FinalStateRegistry": {
       "address": "0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0",
-      "tx": "0xd75d4bc3c4442ef657a7897982e9868b5b86278f67bf737a4b22cdf898f89f7e",
+      "tx": "0x2fbc372535850edb49f6a28767022e874d2c42820a05afe31e703c2f975d61cb",
       "gas": "652257"
     },
     "IntegratedRewardPool": {
       "address": "0xCf7Ed3AccA5a467e9e704C703E8D87F634fB0Fc9",
-      "tx": "0x774e30369cc7808fc2bc9670579f8b6916f5fce99d6408d30452811fed82266a",
-      "gas": "1330130"
+      "tx": "0xf2c1b50c095d4f66305b9a03df203fe98c4649c6ba825d01632e08c454580d89",
+      "gas": "1340050"
     }
   },
   "transactions": {
     "commitRandomSeed": {
-      "tx": "0xc81073068b1266cbbe3647f03e7b230e61f06485a6911e8e0acf002393f4c3e1",
+      "tx": "0x2c8850b4f13eca5b0ebaa82db046b15f68af40e3372602a81fdb994fd357f8bc",
       "gas": "49911"
     },
     "registerFinalState": {
-      "tx": "0x35153887afcece413edf03a0f30af6cf0341009cddb7015f35edf2034193db0c",
+      "tx": "0x4f429b9f679a6ce596e86371ffad104b482cf52392d97a2a11aa9881388e555c",
       "gas": "98849"
     },
     "revealRandomSeed": {
-      "tx": "0xf1608c2d03b86d2b03b1608ab62f0a7e75364374d90d8411b83209de36d198de",
+      "tx": "0x1fb001147d158042f5025d5a86b990c0a5e86e6cbec795996e5e6bf509abe0f7",
       "gas": "58272"
     },
     "fundDispute": {
-      "tx": "0x74cd975dbf27cef27a874e0e4f3c03c6af1959360e3c17f812ddb94f34752504",
-      "gas": "47408"
+      "tx": "0x28d47897d59579beaf1a298ba955d92f26859f0e7323800e597325e0db1bb944",
+      "gas": "47430"
     },
     "finalizeRewards": {
-      "tx": "0x5df904eae5ceaad6435589746d67ca71382cba2c3bc64e8469a294e4b65a3da4",
-      "gas": "577279"
+      "tx": "0x1a80a72bae26d7085cccccc7e21a4298bef0bd29fb042bb7dfaac04df5af2b16",
+      "gas": "604404"
     },
     "claim": {
-      "tx": "0x7f6983ed6235b7767dd5794ffafaed093cad7afa5ccb36a7917e11a7a44f6f68",
-      "gas": "30719"
+      "tx": "0xe4d550323a7953a5366beae5e93316190cdb9a8791a3d9cfb35d5970d36c2bb6",
+      "gas": "30741"
     }
   },
   "context": {
     "disputeId": "78",
     "finalStateRoot": "14695795747349035543706149517880938740666020856823802164744237392406265945397",
-    "totalPayout": "6000000",
+    "rewardMode": "floor_adjusted",
+    "lotteryMode": "1",
+    "psiScaled": "429496729",
+    "rhoEff": "2400000",
+    "totalPayout": "9000000",
     "claimIndex": 0,
     "claimant": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
     "fixtureClaimAmount": "3000000",
     "claimableBefore": "3000000",
     "claimantBalanceBefore": "10000000000000000000000",
-    "claimantBalanceAfter": "9999999959675130505821",
+    "claimantBalanceAfter": "9999999959641064085907",
     "poolBalanceAfter": "21000000"
   }
 }

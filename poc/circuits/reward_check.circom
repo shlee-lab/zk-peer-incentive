@@ -20,7 +20,8 @@ include "../node_modules/circomlib/circuits/bitify.circom";
 // - disputeId (used as pollId for the MACI sidecar integration)
 // - finalStateRoot (the reward sidecar root)
 // - rewardBudget (expected payout cap)
-// - gammaScaled (gamma * 2^LOTTERY_BITS)
+// - lotteryMode (0 = baseline x/rho, 1 = floor-adjusted)
+// - psiScaled (psi * 2^LOTTERY_BITS; must be 0 in baseline mode)
 // - randomSeed (external seed fixed after finalStateRoot registration)
 //
 // Private witness:
@@ -34,6 +35,8 @@ include "../node_modules/circomlib/circuits/bitify.circom";
 // - rewardRemainders[i]
 // - rawThresholds[i]
 // - thresholdRemainders[i]
+// - adjustedThresholds[i]
+// - adjustedThresholdRemainders[i]
 //
 // The expected reward is:
 // floor(kappa * stake_i * agreement_i * D_i * scale / B_i) = expectedScaled_i
@@ -46,9 +49,9 @@ include "../node_modules/circomlib/circuits/bitify.circom";
 // contract is responsible for fixing randomSeed only after finalStateRoot is
 // registered. Each coordinate draw is the low 32 bits of Poseidon(seed, i).
 //
-// Let rawThreshold_i = floor(expectedScaled_i * 2^LOTTERY_BITS / rhoTau).
-// The circuit enforces:
-// threshold_i = clamp(rawThreshold_i, gammaScaled, 2^LOTTERY_BITS-gammaScaled)
+// Let rawThreshold_i = floor(expectedScaled_i * 2^LOTTERY_BITS / rhoTau). Baseline
+// mode uses rawThreshold_i directly. Floor-adjusted mode enforces:
+// threshold_i = psiScaled + floor(rawThreshold_i * (2^LOTTERY_BITS - 2*psiScaled) / 2^LOTTERY_BITS)
 // win_i = 1 iff draw_i < threshold_i
 // payout_i = win_i * rhoTau
 // Therefore every public payout is exactly 0 or rhoTau.
@@ -71,6 +74,8 @@ template RewardCheck(N, DEPTH, NBITS, LOTTERY_BITS) {
     signal input rewardRemainders[N];
     signal input rawThresholds[N];
     signal input thresholdRemainders[N];
+    signal input adjustedThresholds[N];
+    signal input adjustedThresholdRemainders[N];
 
     signal input payouts[N];
     signal input recipients[N];
@@ -82,7 +87,8 @@ template RewardCheck(N, DEPTH, NBITS, LOTTERY_BITS) {
     signal input disputeId;
     signal input finalStateRoot;
     signal input rewardBudget;
-    signal input gammaScaled;
+    signal input lotteryMode;
+    signal input psiScaled;
     signal input randomSeed;
 
     signal totalStake;
@@ -101,6 +107,8 @@ template RewardCheck(N, DEPTH, NBITS, LOTTERY_BITS) {
     component remainderRange[N];
     component rawThresholdRange[N];
     component thresholdRemainderRange[N];
+    component adjustedThresholdRange[N];
+    component adjustedThresholdRemainderRange[N];
     component smoothingRange = Num2Bits(32);
     component kappaRange = Num2Bits(32);
     component scaleRange = Num2Bits(32);
@@ -108,9 +116,9 @@ template RewardCheck(N, DEPTH, NBITS, LOTTERY_BITS) {
     component rhoTauZero = IsZero();
     component rewardBudgetRange = Num2Bits(64);
     component rewardBudgetZero = IsZero();
-    component gammaRange = Num2Bits(LOTTERY_BITS);
-    component gammaZero = IsZero();
-    component gammaUpperBound = LessThan(NBITS);
+    component psiRange = Num2Bits(LOTTERY_BITS);
+    component psiZero = IsZero();
+    component psiUpperBound = LessThan(NBITS);
 
     smoothingRange.in <== smoothing;
     kappaRange.in <== kappa;
@@ -121,12 +129,14 @@ template RewardCheck(N, DEPTH, NBITS, LOTTERY_BITS) {
     rewardBudgetRange.in <== rewardBudget;
     rewardBudgetZero.in <== rewardBudget;
     rewardBudgetZero.out === 0;
-    gammaRange.in <== gammaScaled;
-    gammaZero.in <== gammaScaled;
-    gammaZero.out === 0;
-    gammaUpperBound.in[0] <== gammaScaled;
-    gammaUpperBound.in[1] <== 2 ** (LOTTERY_BITS - 1);
-    gammaUpperBound.out === 1;
+    lotteryMode * (lotteryMode - 1) === 0;
+    psiRange.in <== psiScaled;
+    psiZero.in <== psiScaled;
+    psiUpperBound.in[0] <== psiScaled;
+    psiUpperBound.in[1] <== 2 ** (LOTTERY_BITS - 1);
+    psiUpperBound.out === 1;
+    (1 - lotteryMode) * psiScaled === 0;
+    lotteryMode * psiZero.out === 0;
 
     var totalStakeExpr = 0;
     var totalOneStakeExpr = 0;
@@ -146,6 +156,10 @@ template RewardCheck(N, DEPTH, NBITS, LOTTERY_BITS) {
         rawThresholdRange[i].in <== rawThresholds[i];
         thresholdRemainderRange[i] = Num2Bits(NBITS);
         thresholdRemainderRange[i].in <== thresholdRemainders[i];
+        adjustedThresholdRange[i] = Num2Bits(NBITS);
+        adjustedThresholdRange[i].in <== adjustedThresholds[i];
+        adjustedThresholdRemainderRange[i] = Num2Bits(NBITS);
+        adjustedThresholdRemainderRange[i].in <== adjustedThresholdRemainders[i];
 
         nonceCommitmentHash[i] = Poseidon(2);
         nonceCommitmentHash[i].inputs[0] <== nonces[i];
@@ -200,12 +214,14 @@ template RewardCheck(N, DEPTH, NBITS, LOTTERY_BITS) {
     signal thresholdNumerator[N];
     signal thresholdRhs[N];
     signal thresholdRemLessThanRhoTau[N];
-    signal gammaUpper;
-    signal belowGamma[N];
-    signal lowSelectedDelta[N];
-    signal lowSelected[N];
-    signal aboveUpper[N];
-    signal thresholdDelta[N];
+    signal rawThresholdWithinScale[N];
+    signal adjustedNumerator[N];
+    signal adjustedRhs[N];
+    signal adjustedRemWithinScale[N];
+    signal floorAdjustedThreshold[N];
+    signal thresholdLowerBad[N];
+    signal thresholdUpper;
+    signal thresholdWithinUpper[N];
     signal threshold[N];
     signal expectedPayoutScaled[N];
     signal expectedPayoutScaledSum;
@@ -219,8 +235,10 @@ template RewardCheck(N, DEPTH, NBITS, LOTTERY_BITS) {
     component drawHash[N];
     component drawBits[N];
     component lotteryBound[N];
-    component belowGammaCmp[N];
-    component aboveUpperCmp[N];
+    component rawThresholdBound[N];
+    component adjustedRemBound[N];
+    component thresholdLowerCmp[N];
+    component thresholdUpperCmp[N];
     component expectedBudgetBound = LessThan(NBITS);
 
     seedHash.inputs[0] <== disputeId;
@@ -228,7 +246,7 @@ template RewardCheck(N, DEPTH, NBITS, LOTTERY_BITS) {
     seedHash.inputs[2] <== randomSeed;
     seed <== seedHash.out;
 
-    gammaUpper <== (2 ** LOTTERY_BITS) - gammaScaled;
+    thresholdUpper <== (2 ** LOTTERY_BITS) - psiScaled;
     var expectedPayoutScaledSumExpr = 0;
     for (var i = 0; i < N; i++) {
         D[i] <== totalStake - stakes[i] + 2 * smoothing;
@@ -268,19 +286,36 @@ template RewardCheck(N, DEPTH, NBITS, LOTTERY_BITS) {
         thresholdRemLessThanRhoTau[i] <== thresholdRemBound[i].out;
         thresholdRemLessThanRhoTau[i] === 1;
 
-        belowGammaCmp[i] = LessThan(NBITS);
-        belowGammaCmp[i].in[0] <== rawThresholds[i];
-        belowGammaCmp[i].in[1] <== gammaScaled;
-        belowGamma[i] <== belowGammaCmp[i].out;
-        lowSelectedDelta[i] <== belowGamma[i] * (gammaScaled - rawThresholds[i]);
-        lowSelected[i] <== rawThresholds[i] + lowSelectedDelta[i];
+        rawThresholdBound[i] = LessThan(NBITS);
+        rawThresholdBound[i].in[0] <== rawThresholds[i];
+        rawThresholdBound[i].in[1] <== (2 ** LOTTERY_BITS) + 1;
+        rawThresholdWithinScale[i] <== rawThresholdBound[i].out;
+        rawThresholdWithinScale[i] === 1;
 
-        aboveUpperCmp[i] = LessThan(NBITS);
-        aboveUpperCmp[i].in[0] <== gammaUpper;
-        aboveUpperCmp[i].in[1] <== lowSelected[i];
-        aboveUpper[i] <== aboveUpperCmp[i].out;
-        thresholdDelta[i] <== aboveUpper[i] * (gammaUpper - lowSelected[i]);
-        threshold[i] <== lowSelected[i] + thresholdDelta[i];
+        adjustedNumerator[i] <== rawThresholds[i] * ((2 ** LOTTERY_BITS) - 2 * psiScaled);
+        adjustedRhs[i] <== adjustedThresholds[i] * (2 ** LOTTERY_BITS) + adjustedThresholdRemainders[i];
+        adjustedNumerator[i] === adjustedRhs[i];
+
+        adjustedRemBound[i] = LessThan(NBITS);
+        adjustedRemBound[i].in[0] <== adjustedThresholdRemainders[i];
+        adjustedRemBound[i].in[1] <== 2 ** LOTTERY_BITS;
+        adjustedRemWithinScale[i] <== adjustedRemBound[i].out;
+        adjustedRemWithinScale[i] === 1;
+
+        floorAdjustedThreshold[i] <== psiScaled + adjustedThresholds[i];
+        threshold[i] <== rawThresholds[i] + lotteryMode * (floorAdjustedThreshold[i] - rawThresholds[i]);
+
+        thresholdLowerCmp[i] = LessThan(NBITS);
+        thresholdLowerCmp[i].in[0] <== threshold[i];
+        thresholdLowerCmp[i].in[1] <== psiScaled;
+        thresholdLowerBad[i] <== thresholdLowerCmp[i].out;
+        thresholdLowerBad[i] === 0;
+
+        thresholdUpperCmp[i] = LessThan(NBITS);
+        thresholdUpperCmp[i].in[0] <== threshold[i];
+        thresholdUpperCmp[i].in[1] <== thresholdUpper + 1;
+        thresholdWithinUpper[i] <== thresholdUpperCmp[i].out;
+        thresholdWithinUpper[i] === 1;
 
         drawHash[i] = Poseidon(2);
         drawHash[i].inputs[0] <== seed;
@@ -314,4 +349,4 @@ template RewardCheck(N, DEPTH, NBITS, LOTTERY_BITS) {
     expectedBudgetOk === 1;
 }
 
-component main { public [payouts, recipients, stakes, smoothing, kappa, scale, rhoTau, disputeId, finalStateRoot, rewardBudget, gammaScaled, randomSeed] } = RewardCheck(8, 3, 128, 32);
+component main { public [payouts, recipients, stakes, smoothing, kappa, scale, rhoTau, disputeId, finalStateRoot, rewardBudget, lotteryMode, psiScaled, randomSeed] } = RewardCheck(8, 3, 128, 32);

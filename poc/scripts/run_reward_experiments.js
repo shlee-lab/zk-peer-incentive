@@ -18,17 +18,18 @@ const DEFAULT_STAKES = Array.from({ length: N }, () => 10n);
 const DEFAULT_BUDGET = 3_000_000n;
 const DEFAULT_RHO_TAU = 3_000_000n;
 const EXPOSURE_RHO_TAU = 25_000_000n;
-const DEFAULT_GAMMA_SCALED = (5n * (1n << 32n)) / 100n;
+const LOTTERY_SCALE = 1n << 32n;
+const DEFAULT_PSI_SCALED = (10n * LOTTERY_SCALE) / 100n;
 const LOTTERY_SAMPLE_COUNT = 64;
 const LOTTERY_CI_SAMPLE_COUNT = Number(process.env.REWARD_LOTTERY_CI_SAMPLES || 512);
 const FULL_MACI_E2E_FILE = path.join(DATA_DIR, "full_maci_reward_anvil_latest.json");
 const DEFAULT_REWARD_GAS = {
   commitRandomSeed: 49_899,
-  registerFinalState: 93_334,
+  registerFinalState: 98_837,
   revealRandomSeed: 58_248,
-  fundDispute: 47_396,
-  finalizeRewards: 671_978,
-  claim: 30_684,
+  fundDispute: 47_418,
+  finalizeRewards: 584_313,
+  claim: 30_729,
 };
 
 function fieldElement(label) {
@@ -173,7 +174,7 @@ async function runSweep(profiles) {
   const rewardBudgets = [1_000_000n, 3_000_000n, 10_000_000n];
 
   for (const profile of profiles) {
-    const common = baseInputs(profile);
+    const common = { ...baseInputs(profile), rhoTau: EXPOSURE_RHO_TAU };
     for (const smoothing of smoothings) {
       for (const kappa of kappas) {
         for (const rewardBudget of rewardBudgets) {
@@ -514,10 +515,12 @@ async function runExposureSanity(profiles) {
 
 async function runProbabilityExposure(profiles) {
   const rows = [];
-  const gammaConfigs = [
-    { label: "0.02", gammaScaled: (2n * (1n << 32n)) / 100n },
-    { label: "0.05", gammaScaled: DEFAULT_GAMMA_SCALED },
-    { label: "0.10", gammaScaled: (10n * (1n << 32n)) / 100n },
+  const lotteryConfigs = [
+    { mode: "baseline", label: "baseline", psiScaled: 0n },
+    { mode: "floor_adjusted", label: "psi=0.05", psiScaled: (5n * LOTTERY_SCALE) / 100n },
+    { mode: "floor_adjusted", label: "psi=0.10", psiScaled: DEFAULT_PSI_SCALED },
+    { mode: "floor_adjusted", label: "psi=0.20", psiScaled: (20n * LOTTERY_SCALE) / 100n },
+    { mode: "floor_adjusted", label: "psi=0.30", psiScaled: (30n * LOTTERY_SCALE) / 100n },
   ];
   for (const profile of profiles) {
     const common = baseInputs(profile);
@@ -525,25 +528,26 @@ async function runProbabilityExposure(profiles) {
       stateRoot: fieldElement(`${profile.name} probability exposure root`),
       randomSeed: fieldElement(`${profile.name} probability exposure random seed`),
     };
-    for (const { label, gammaScaled } of gammaConfigs) {
+    for (const { mode, label, psiScaled } of lotteryConfigs) {
       const original = await computeBernoulliLotteryPayouts({
         ...common,
         ...context,
         smoothing: 1n,
         kappa: 100n,
-        gammaScaled,
-        rewardBudget: BigInt(N) * common.rhoTau,
+        lotteryMode: mode,
+        psiScaled,
       });
       for (let voterIndex = 0; voterIndex < N; voterIndex += 1) {
         const flippedReports = [...profile.reports];
         flippedReports[voterIndex] = flippedReports[voterIndex] === 1 ? 0 : 1;
         const flipped = await computeBernoulliLotteryPayouts({
           ...baseInputs({ ...profile, reports: flippedReports }),
+          rhoTau: EXPOSURE_RHO_TAU,
           ...context,
           smoothing: 1n,
           kappa: 100n,
-          gammaScaled,
-          rewardBudget: BigInt(N) * common.rhoTau,
+          lotteryMode: mode,
+          psiScaled,
         });
         const direct = new Set(directRingAffectedIndices(common.peerIndices, voterIndex));
         for (let coordinateIndex = 0; coordinateIndex < N; coordinateIndex += 1) {
@@ -552,8 +556,10 @@ async function runProbabilityExposure(profiles) {
           const delta = q1 >= q0 ? q1 - q0 : q0 - q1;
           rows.push({
             profile: profile.name,
-            gamma: label,
-            gammaScaled: gammaScaled.toString(),
+            mode: label,
+            lotteryMode: original.lotteryMode,
+            psiScaled: psiScaled.toString(),
+            rhoEff: original.rhoEff.toString(),
             voterIndex,
             coordinateIndex,
             directRingCoordinate: direct.has(coordinateIndex) ? 1 : 0,
@@ -698,10 +704,10 @@ function writeProofShape() {
   writeCsv(path.join(DATA_DIR, "proof_shape.csv"), [
     { metric: "voters", value: 8 },
     { metric: "merkle_depth", value: 3 },
-    { metric: "public_inputs", value: 33 },
-    { metric: "private_inputs", value: 96 },
-    { metric: "constraints", value: 26080 },
-    { metric: "allocation_mode", value: "coordinate_bernoulli_lottery" },
+    { metric: "public_inputs", value: 34 },
+    { metric: "private_inputs", value: 112 },
+    { metric: "constraints", value: 30164 },
+    { metric: "allocation_mode", value: "baseline_or_floor_adjusted_bernoulli_lottery" },
     { metric: "seed_mode", value: "external_commit_reveal_seed" },
   ]);
 }
@@ -756,9 +762,10 @@ async function main() {
     allocationMode: "coordinate_bernoulli_lottery",
     fixedBudgetBaseline: DEFAULT_BUDGET.toString(),
     allocationBaseline: "scale",
-    lotteryMode: "current circuit uses independent coordinate-wise Bernoulli payouts in {0, rhoTau}; fixed-budget data files are comparison baselines",
+    lotteryMode: "current circuit supports baseline q=x/rho and floor_adjusted q=psi+(1-2psi)x/rho",
     rhoTau: DEFAULT_RHO_TAU.toString(),
-    gammaScaled: DEFAULT_GAMMA_SCALED.toString(),
+    defaultPsiScaled: DEFAULT_PSI_SCALED.toString(),
+    defaultRhoEff: (((LOTTERY_SCALE - 2n * DEFAULT_PSI_SCALED) * DEFAULT_RHO_TAU) / LOTTERY_SCALE).toString(),
     lotterySamples: LOTTERY_SAMPLE_COUNT,
     lotteryConfidenceSamples: LOTTERY_CI_SAMPLE_COUNT,
     exposureRows: exposureRows.length,
@@ -775,6 +782,7 @@ async function main() {
     })),
     notes: [
       "Current integrated payouts are Bernoulli: each public payout is either 0 or rhoTau.",
+      "Floor-adjusted mode makes q_i = psi + (1-2*psi)*x_i/rhoTau; baseline mode uses q_i = x_i/rhoTau.",
       "Total Bernoulli payout is a random variable; the pool funds N*rhoTau maximum exposure.",
       "Fixed-budget allocation files remain as a legacy exact-budget comparison baseline.",
       "Reward sensitivity is plotted as average max_i P_i / baseline budget over deterministic lottery samples for the legacy comparison figure.",

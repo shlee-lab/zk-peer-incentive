@@ -120,8 +120,8 @@ finalRewardStateRoot = MerkleRoot(leaf_1, ..., leaf_N)
 The reward circuit privately opens `nonce_i` to `nonceCommitment_i`, verifies
 Merkle inclusion against `finalRewardStateRoot`, computes coordinate-wise
 Bernoulli peer-prediction lottery rewards, and exposes payouts plus `pollId`,
-`finalRewardStateRoot`, `gammaScaled`, and the external `randomSeed` as public
-signals. The current full MACI experiment uses each encrypted
+`finalRewardStateRoot`, `lotteryMode`, `psiScaled`, and the external
+`randomSeed` as public signals. The current full MACI experiment uses each encrypted
 `VoteCommand.salt` as private sidecar nonce material, and the circuit also
 exposes recipient addresses so the payout contract can bind claims to the
 proof.
@@ -169,32 +169,32 @@ Observed Hardhat-harness smoke run:
 
 Latest observed Anvil run:
 
-- Result: `1 passing (5m)`.
+- Result: `1 passing (4m)`.
 - Execution chain ID: `31337`.
 - Anvil RPC: `http://127.0.0.1:8556`.
 - MACI tally: option 0 = `36`, option 1 = `36`.
 - Total spent voice credits: `648`.
 - Derived reports: `[1, 0, 1, 1, 0, 0, 1, 0]`.
 - Final reward sidecar root:
-  `12838686614958814108589935440863903919731410615391099499719679198902005592710`.
+  `13243766976888713672962234590309470453992660261403000315366918686898819455002`.
 - Reward nonce source: `MACI VoteCommand.salt`.
 - Reward budget cap: `24000000`.
-- Reward mode: coordinate-wise Bernoulli lottery with `rhoTau = 3000000` and
-  `gamma = 0.05`.
+- Reward mode: floor-adjusted Bernoulli lottery with `rhoTau = 3000000`,
+  `psi = 0.10`, `psiScaled = 429496729`, and `rhoEff = 2400000`.
 - Stake design: uniform public stake `10` for all eight voters.
-- Lottery wins: `[0, 0, 1, 0, 0, 0, 0, 0]`.
-- Bernoulli payouts: `[0, 0, 3000000, 0, 0, 0, 0, 0]`.
-- Total payout in this draw: `3000000`.
+- Lottery wins: `[0, 0, 1, 0, 1, 0, 0, 0]`.
+- Bernoulli payouts: `[0, 0, 3000000, 0, 3000000, 0, 0, 0]`.
+- Total payout in this draw: `6000000`.
 - Maximum funded exposure: `24000000`.
 - Sample claim index: `2`.
-- MACI proof phase: `124084 ms`.
-- Reward proof phase: `4618 ms`.
+- MACI proof phase: `116318 ms`.
+- Reward proof phase: `2630 ms`.
 - Seed commitment gas: `49899`.
 - Reward root registration gas: `98837`.
 - Seed reveal gas: `58248`.
-- Reward pool funding gas: `47396`.
-- Reward finalization gas: `557212`.
-- Reward claim gas: `30707`.
+- Reward pool funding gas: `47418`.
+- Reward finalization gas: `584313`.
+- Reward claim gas: `30729`.
 
 Generated reward artifacts are under `poc/artifacts/full_maci_reward/` for the
 Hardhat harness and `poc/artifacts/full_maci_reward_anvil/` for Anvil. They are

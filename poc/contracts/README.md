@@ -48,9 +48,13 @@ The contract does not require `sum_i payout_i == rewardBudget`. Under the
 Bernoulli rule the total payout is random. Unpaid balance remains in the pool
 and can be withdrawn through the owner remainder path after finalization.
 
+The contract does not interpret `psiScaled` directly; it is a verifier public
+signal enforced by the circuit. The pool only checks registry binding, binary
+payout shape, funding, and proof validity.
+
 ## Public Signal Order
 
-`IntegratedRewardPool` and `RewardVerifierAdapter` expect 33 public signals:
+`IntegratedRewardPool` and `RewardVerifierAdapter` expect 34 public signals:
 
 ```text
 payouts[0..7]
@@ -63,11 +67,12 @@ rhoTau[27]
 disputeId[28]
 finalStateRoot[29]
 rewardBudget[30]
-gammaScaled[31]
-randomSeed[32]
+lotteryMode[31]
+psiScaled[32]
+randomSeed[33]
 ```
 
-`RewardVerifierAdapter` decodes `abi.encode(a, b, c)` and copies those 33
+`RewardVerifierAdapter` decodes `abi.encode(a, b, c)` and copies those 34
 signals into the generated verifier's fixed-size array.
 
 ## Local Commands

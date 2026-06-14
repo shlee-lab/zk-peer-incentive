@@ -18,9 +18,10 @@ encrypted MACI votes
   -> recipient claim
 ```
 
-This is not production security software. It is an experimental feasibility
-artifact for a paper: the useful claim is that a real ZK proof can bind reward
-payments to a committed MACI-derived hidden report state.
+This is not production security software. It is an experimental artifact for a
+paper: the useful claim is that a real ZK proof can bind reward payments to a
+committed MACI-derived hidden report state, and that the paper's floor-adjusted
+lottery model can be evaluated against public reward transcripts.
 
 ## What Is Implemented
 
@@ -36,49 +37,59 @@ leaf_i = Poseidon(maciStateIndex_i, voterId_i, report_i,
 
 The reward circuit verifies Merkle membership for every voter, so the private
 reports and nonce openings used for reward computation are bound to the public
-`finalRewardStateRoot`. Recipient addresses are also part of the leaves, so the
-proof binds each payout coordinate to the address that can later claim it.
+`finalRewardStateRoot`. Recipient addresses are part of the leaves, so the
+proof also binds each payout coordinate to the address that can later claim it.
 
-The current reward rule is coordinate-wise Bernoulli lottery, not exact-budget
-normalization:
+The circuit supports two lottery modes:
 
 ```text
-x_i          = smoothed inverse-frequency peer-agreement score
-raw_i        = floor(x_i * 2^32 / rhoTau)
-threshold_i  = clamp(raw_i, gammaScaled, 2^32 - gammaScaled)
-u_i          = low32(Poseidon(seed, i))
-payout_i     = rhoTau if u_i < threshold_i, otherwise 0
+baseline reward-correctness mode:
+  q_i = x_i / rhoTau
+
+floor-adjusted receipt-resistance mode:
+  q_i = psi + (1 - 2 psi) * x_i / rhoTau
 ```
 
-Therefore every public payout is exactly `0` or `rhoTau`. The total payout is a
+Here `x_i` is the smoothed inverse-frequency peer-agreement score, scaled by
+`rhoTau`. The integrated default is floor-adjusted mode with `psi = 0.10`. The
+circuit enforces `0 < psi < 1/2`, `q_i in [psi, 1 - psi]`, and:
+
+```text
+u_i       = low32(Poseidon(seed, i))
+payout_i = rhoTau if u_i < q_i * 2^32, otherwise 0
+```
+
+Every public payout is therefore exactly `0` or `rhoTau`. The total payout is a
 random variable. The pool is funded for maximum exposure, `N * rhoTau`, and
-unpaid balance remains withdrawable by the owner after finalization. The
-`rewardBudget` public input is used as an expected-payout cap, not as a rule
-that forces `sum_i payout_i` to equal a fixed budget.
+unpaid balance remains withdrawable by the owner after finalization.
+
+The implementation does not exact-budget-normalize scores before the active
+lottery. The legacy exact-budget/fixed-budget code and figures are retained as
+a comparison baseline, but the current integrated contract uses coordinate-wise
+Bernoulli payouts. The `rewardBudget` public input is an expected-payout cap,
+not a rule that forces `sum_i payout_i` to equal a fixed budget.
 
 Lottery randomness is derived from an external seed fixed after the reward root
 is registered:
 
 ```text
-seedCommitment = keccak256(seedPreimage, salt)      // committed before root
+seedCommitment = keccak256(seedPreimage, salt)
 randomSeed     = keccak256(seedPreimage, salt,
                            disputeId, finalRewardStateRoot) mod Fr
 seed           = Poseidon(disputeId, finalRewardStateRoot, randomSeed)
 ```
 
 The local contract enforces the commit, root registration, and reveal order.
-This gives a clean experimental interface for non-grindable randomness. A
-production deployment would replace or harden this with a beacon, VRF, or
-multi-party commit-reveal policy.
+This is an experimental non-grinding interface. A production deployment would
+replace or harden it with a beacon, VRF, or multi-party commit-reveal policy.
+The per-coordinate draws `Poseidon(seed, i)` are computationally
+pseudorandom, not statistically independent.
 
-The per-coordinate draws are separated as `Poseidon(seed, i)`; this is a
-computational pseudorandomness assumption, not statistical independence.
+## Public Transcript Privacy
 
-## Privacy Shape
-
-The paper now studies public transcript privacy: a briber sees the full payout
+The paper studies public transcript privacy: a briber observes the payout
 vector, proof public inputs, finalization transaction, claimable balances, and
-other on-chain reward data.
+other on-chain reward data, not only one voter's payout.
 
 The prototype uses ring matching, `peer_i = (i + 1) mod N`. Flipping one hidden
 report directly changes two peer-agreement coordinates: the voter itself and
@@ -89,30 +100,27 @@ For the integrated `N = 8` run, the repository reports both views:
 
 ```text
 direct peer-graph exposure: D_graph = 2
-conservative public-transcript coordinate count: up to 8 coordinates
+measured public-payout coordinate exposure: max D_i = 8, average D_i = 7.237063
 ```
 
-The generated exposure data measures how much each Bernoulli probability
-`q_j` changes when one report is flipped. With the current profile, the largest
-direct change is `0.90` at `gamma = 0.05`, while the largest observed
-second-order change is `0.18882766`. See
-`experiments/reward-evaluation/data/exposure_probability_sanity.csv`.
+The measured `D_i` is an accounting report, not a complete privacy guarantee.
+It counts public payout coordinates whose lottery probability changes when one
+hidden report is flipped. The public root/id/seed fields are documented as
+transcript fields, but the numeric `D_i` count is for payout coordinates.
 
 ## Current Local Result
 
-Latest full local run, generated from the working tree based on commit
-`e8cf1a4`:
+Latest full local run, generated from the working tree:
 
 ```text
 chain: Anvil, chain id 31337
 voters: 8
 MACI tally: option0 = 36, option1 = 36
 reports: [1, 0, 1, 1, 0, 0, 1, 0]
-reward mode: coordinate-wise Bernoulli lottery
+reward mode: floor-adjusted Bernoulli lottery
+psi: 0.10
 rhoTau: 3,000,000
-gamma: 0.05
-payouts: [0, 0, 3000000, 0, 0, 0, 0, 0]
-total payout in this draw: 3,000,000
+rho_eff: 2,400,000
 maximum funded exposure: 24,000,000
 Foundry tests: 16 passed
 ```
@@ -120,72 +128,49 @@ Foundry tests: 16 passed
 The reward circuit in the same run has:
 
 ```text
-constraints: 26,080
-public inputs: 33
-private inputs: 96
+constraints: 30,164
+public inputs: 34
+private inputs: 112
 ```
 
 Proof time and reward gas from the same Anvil run:
 
 | Metric | Value |
 | --- | ---: |
-| MACI proof phase | `124.084 s` |
-| Reward proof phase | `4.618 s` |
+| MACI proof phase | `116.318 s` |
+| Reward proof phase | `2.630 s` |
 | Commit seed | `49,899 gas` |
 | Register final reward root | `98,837 gas` |
 | Reveal seed | `58,248 gas` |
-| Fund reward pool | `47,396 gas` |
-| Verify proof + finalize payouts | `557,212 gas` |
-| Claim one payout | `30,707 gas` |
+| Fund reward pool | `47,418 gas` |
+| Verify proof + finalize payouts | `584,313 gas` |
+| Claim one payout | `30,729 gas` |
 
-The gamma floor contributes a minimum expected payout mass of
-`N * gamma * rhoTau = 8 * 0.05 * 3,000,000 = 1,200,000` in the integrated run.
+## Privacy Audit Snapshot
 
-## Evaluation
+The synthetic privacy audit logs hidden reports only inside the experiment
+harness so public payouts can be compared against ground truth. Production
+reports remain private.
 
-The evaluation artifacts are under `experiments/reward-evaluation/`. The main
-figures answer practical questions rather than claiming production readiness.
+| Mode | `rho_eff` | Empirical `eta` | Transcript accuracy | Reward gap | Max `D_i` |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| baseline | `3,000,000` | `0.036147` | `0.539185` | `194,293.61` | `8` |
+| `psi = 0.05` | `2,700,000` | `0.032533` | `0.533058` | `174,864.25` | `8` |
+| `psi = 0.10` | `2,400,000` | `0.028918` | `0.519555` | `155,434.89` | `8` |
+| `psi = 0.20` | `1,800,000` | `0.021688` | `0.525618` | `116,576.16` | `8` |
+| `psi = 0.30` | `1,200,000` | `0.014459` | `0.509848` | `77,717.44` | `8` |
 
-End-to-end overhead compares MACI proving, reward proving, and reward-layer gas:
+In this synthetic workload, increasing `psi` reduces the difference between
+public payout distributions for hidden reports, and it also reduces reward
+capacity as predicted by `rho_eff = (1 - 2 psi) * rhoTau`.
 
-![End-to-end overhead](experiments/reward-evaluation/figures/e2e_overhead.png)
+![Payout distributions](experiments/reward-evaluation/figures/privacy_payout_distributions.png)
 
-Reward sensitivity and lottery confidence show how the peer-prediction rule
-changes lottery concentration as `kappa` changes. Here `kappa` is the reward
-scale: larger values make peer-agreement scores translate into higher lottery
-probabilities.
+![Inference accuracy](experiments/reward-evaluation/figures/privacy_inference_accuracy.png)
 
-![Reward-scale sensitivity](experiments/reward-evaluation/figures/reward_sensitivity.png)
+![Incentive gap](experiments/reward-evaluation/figures/privacy_incentive_gap.png)
 
-![Lottery confidence](experiments/reward-evaluation/figures/lottery_confidence.png)
-
-Attack simulation samples the full public payout transcript for two worlds
-that differ by one target report. It compares an optimal likelihood-ratio
-classifier against the clipped theoretical advantage curve for
-`gamma in {0.02, 0.05, 0.10}`. In the current high-signal parameter setting, the
-empirical advantage reaches the 50% ceiling after repeated rounds, so the plot
-is best read as a parameter-sanity warning rather than a deployment claim.
-
-![Attack simulation](experiments/reward-evaluation/figures/attack_simulation.png)
-
-The fixed-budget allocation figure is retained as a comparison baseline for
-the older exact-budget mode. It is not the payout rule used by the current
-integrated reward contract.
-
-![Fixed-budget baseline](experiments/reward-evaluation/figures/budget_allocation.png)
-
-Reward gas and operating cost projections isolate reward-layer operating cost.
-Deployment is excluded.
-
-| Claimants | Ethereum L1, 20 gwei | Arbitrum execution, 0.1 gwei |
-| ---: | ---: | ---: |
-| 10 | `$69.76` | `$0.35` |
-| 100 | `$354.38` | `$1.77` |
-| 1000 | `$3,200.56` | `$16.00` |
-
-![Reward on-chain cost](experiments/reward-evaluation/figures/cost_profile.png)
-
-More detail, including data-file descriptions and reproduction commands, is in
+More data and figure notes are in
 [experiments/reward-evaluation/README.md](experiments/reward-evaluation/README.md).
 
 ## Running Locally
@@ -217,10 +202,41 @@ cd poc
 python3 -m venv .venv
 . .venv/bin/activate
 pip install -r requirements.txt
-npm run experiments:reward-data
-npm run experiments:attack-simulation
-npm run experiments:reward-scaling
-npm run experiments:reward-plots
+npm run experiments:reward
+```
+
+For just the privacy audit:
+
+```bash
+cd poc
+. .venv/bin/activate
+npm run experiments:privacy-audit
+```
+
+The reward artifact builder reads the mode from sidecar input JSON. Use:
+
+```json
+{ "lotteryMode": "baseline", "psiScaled": "0" }
+```
+
+for baseline reward-correctness mode, or:
+
+```json
+{ "lotteryMode": "floor_adjusted", "psiScaled": "429496729" }
+```
+
+for floor-adjusted mode with `psi = 0.10`. The checked-in generated verifier
+fixture and full MACI Anvil script use the floor-adjusted setting by default.
+
+The main audit outputs are:
+
+```text
+experiments/reward-evaluation/data/privacy_audit_samples.csv
+experiments/reward-evaluation/data/privacy_audit_summary.csv
+experiments/reward-evaluation/data/privacy_audit_exposure.csv
+experiments/reward-evaluation/data/privacy_audit_selective_bribery.csv
+experiments/reward-evaluation/figures/privacy_*.pdf
+experiments/reward-evaluation/figures/privacy_*.png
 ```
 
 ## Scope

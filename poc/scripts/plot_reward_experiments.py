@@ -540,7 +540,6 @@ def main():
     plot_operating_cost_projection()
     plot_reward_scaling()
     plot_cost_profile()
-    plot_attack_simulation()
 
 
 if __name__ == "__main__":

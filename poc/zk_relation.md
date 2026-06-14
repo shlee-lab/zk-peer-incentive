@@ -23,7 +23,8 @@ For the current integrated circuit, `N = 8` and the public inputs are:
 - `disputeId`: dispute id or MACI poll id.
 - `finalStateRoot`: public reward sidecar Merkle root.
 - `rewardBudget`: expected-payout cap.
-- `gammaScaled`: lower clamp, `floor(gamma * 2^LOTTERY_BITS)`.
+- `lotteryMode`: `0` for baseline mode, `1` for floor-adjusted mode.
+- `psiScaled`: `floor(psi * 2^LOTTERY_BITS)`. Baseline mode requires `0`.
 - `randomSeed`: external randomness fixed after `finalStateRoot` registration.
 
 The public signal order is:
@@ -39,8 +40,9 @@ rhoTau[27]
 disputeId[28]
 finalStateRoot[29]
 rewardBudget[30]
-gammaScaled[31]
-randomSeed[32]
+lotteryMode[31]
+psiScaled[32]
+randomSeed[33]
 ```
 
 ## Private Witness
@@ -57,6 +59,8 @@ The witness contains:
 - `rewardRemainders[i]`.
 - `rawThresholds[i]`.
 - `thresholdRemainders[i]`.
+- `adjustedThresholds[i]`.
+- `adjustedThresholdRemainders[i]`.
 
 ## Reward State Binding
 
@@ -127,7 +131,7 @@ $$
 Equivalently, `expectedScaled_i` is the fixed-point floor of the smoothed
 inverse-frequency peer-agreement score.
 
-## Bernoulli Lottery
+## Bernoulli Lottery Modes
 
 The application layer fixes `randomSeed` only after `finalStateRoot` has been
 registered. The circuit derives the lottery seed as:
@@ -142,7 +146,7 @@ $$
 u_i = low_{32}(H(seed, i)).
 $$
 
-The unclamped threshold is:
+The baseline threshold is:
 
 $$
 raw_i =
@@ -164,11 +168,31 @@ $$
 0 \le thresholdRem_i < rhoTau.
 $$
 
-It then enforces the probability clamp:
+The circuit supports two modes:
+
+```text
+lotteryMode = 0: threshold_i = raw_i
+lotteryMode = 1: threshold_i = psiScaled
+                    + floor(raw_i * (2^32 - 2*psiScaled) / 2^32)
+```
+
+Equivalently, floor-adjusted mode implements:
 
 $$
-threshold_i =
-\min(2^{32}-gammaScaled,\max(gammaScaled, raw_i)).
+q_i = \psi + (1 - 2\psi)\frac{expectedScaled_i}{rhoTau}.
+$$
+
+The circuit enforces `0 < psi < 1/2` in floor-adjusted mode and `psi = 0` in
+baseline mode. It also enforces:
+
+$$
+\psi \le q_i \le 1-\psi.
+$$
+
+The reported effective reward capacity is:
+
+$$
+rhoEff = \left\lfloor (1 - 2\psi) rhoTau \right\rfloor.
 $$
 
 The winner bit is:
@@ -209,7 +233,7 @@ The circuit enforces:
 4. Merkle inclusion in `finalStateRoot` for every coordinate;
 5. leave-one-out score arithmetic;
 6. threshold quotient/remainder arithmetic;
-7. gamma lower and upper clamp;
+7. `lotteryMode` and `psiScaled` constraints;
 8. independent coordinate draws `H(seed, i)`;
 9. binary payout equation `payout_i = win_i * rhoTau`;
 10. expected-payout cap against `rewardBudget`.

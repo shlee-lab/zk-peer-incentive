@@ -86,7 +86,10 @@ function main() {
   const seedPreimage = vector.seedPreimage || "0";
   const seedSalt = vector.seedSalt || "0x0000000000000000000000000000000000000000000000000000000000000000";
   const seedCommitment = vector.seedCommitment || seedSalt;
-  const randomSeed = vector.randomSeed || publicSignals[32] || "0";
+  const randomSeed = vector.randomSeed || publicSignals[33] || "0";
+  const lotteryMode = publicSignals[31] || "0";
+  const psiScaled = publicSignals[32] || "0";
+  const rhoEff = vector.rhoEff || "0";
 
   const source = `// SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
@@ -99,6 +102,9 @@ library RewardProofFixture {
     bytes32 internal constant SEED_SALT = ${seedSalt};
     bytes32 internal constant SEED_COMMITMENT = ${seedCommitment};
     uint256 internal constant RANDOM_SEED = ${randomSeed};
+    uint256 internal constant LOTTERY_MODE = ${lotteryMode};
+    uint256 internal constant PSI_SCALED = ${psiScaled};
+    uint256 internal constant RHO_EFF = ${rhoEff};
 
 ${uintFunction("publicSignals", publicSignals)}
 
@@ -127,8 +133,10 @@ ${proofBytes(proof)}
       totalPayout: totalPayout.toString(),
       disputeId: publicSignals[28],
       finalStateRoot: publicSignals[29],
-      gammaScaled: publicSignals[31],
-      randomSeed: publicSignals[32],
+      lotteryMode: publicSignals[31],
+      psiScaled: publicSignals[32],
+      randomSeed: publicSignals[33],
+      rhoEff,
       seedPreimage,
       seedSalt,
       seedCommitment,

@@ -1,84 +1,97 @@
 # Reward Evaluation
 
-This directory contains the data and figures used to describe the experimental
+This directory contains the data and figures used to evaluate the experimental
 MACI reward sidecar. The current implementation is a coordinate-wise Bernoulli
-lottery reward rule bound to a MACI-derived reward state root. The older
-exact-budget allocation mode is retained only as a comparison baseline.
+lottery over hidden binary reports, with a switch between baseline reward
+correctness and floor-adjusted receipt resistance.
 
 The evaluation supports a narrow claim: official MACI can run a local encrypted
-voting flow, and a separate Groth16 reward proof can bind hidden binary reports
-to a reward state root, verify lottery payouts, and finalize claimable rewards
-on Anvil.
+voting flow, and a separate Groth16 reward proof can bind hidden reports to a
+reward state root, verify floor-adjusted lottery payouts, and finalize
+claimable balances on Anvil. It is not a production security claim.
 
-## Reader Questions
+## Modes
 
-| Reader question | Matching artifact | What it answers |
-| --- | --- | --- |
-| Does the full system run locally with real MACI? | `data/full_maci_reward_anvil_latest.json` | Official MACI deployment, signup, encrypted votes, MACI proofs, reward proof, finalization, and one claim. |
-| How much overhead does the reward sidecar add? | `figures/e2e_overhead.pdf` | MACI proof time, reward proof time, and reward-layer gas from one Anvil run. |
-| Does the reward rule react to report patterns? | `figures/reward_sensitivity.pdf`, `figures/lottery_confidence.pdf` | How lottery concentration changes as `kappa` changes. |
-| How much can one hidden report move public probabilities? | `data/exposure_probability_sanity.csv` | Per-coordinate changes in `q_j` after flipping one report. |
-| How visible is one report across repeated rounds? | `figures/attack_simulation.pdf` | Likelihood-ratio distinguishing advantage for two worlds differing in one report. |
-| What is the reward-layer gas cost? | `figures/cost_profile.pdf` | Seed commit, root registration, seed reveal, pool funding, proof finalization, and claim gas. |
-| What happens with a larger max-size reward circuit? | `figures/reward_scaling.pdf` | Standalone `N_max = 64` capacity experiment. |
+The circuit exposes `lotteryMode` and `psiScaled`.
+
+```text
+lotteryMode = 0: baseline reward-correctness mode
+q_i = x_i / rhoTau
+
+lotteryMode = 1: floor-adjusted receipt-resistance mode
+q_i = psi + (1 - 2 psi) * x_i / rhoTau
+```
+
+`psiScaled = floor(psi * 2^32)`. Baseline mode requires `psiScaled = 0`.
+Floor-adjusted mode requires `0 < psi < 1/2` and the circuit enforces
+`q_i in [psi, 1 - psi]`. A winner receives `rhoTau`; a loser receives `0`.
+
+The effective reward capacity reported by the scripts is:
+
+```text
+rho_eff = floor((1 - 2 psi) * rhoTau)
+```
+
+The default integrated run uses floor-adjusted mode with `psi = 0.10`,
+`rhoTau = 3,000,000`, and `rho_eff = 2,400,000`.
+
+Sidecar input JSON selects the mode:
+
+```json
+{ "lotteryMode": "baseline", "psiScaled": "0" }
+```
+
+or:
+
+```json
+{ "lotteryMode": "floor_adjusted", "psiScaled": "429496729" }
+```
+
+The generated verifier fixture and full MACI Anvil runner use floor-adjusted
+mode by default.
+
+## Fixed-Budget Interaction
+
+The active circuit does not exact-budget-normalize scores before the lottery.
+It computes the peer-prediction score `x_i`, checks that `x_i <= rhoTau`, and
+then applies either `x_i / rhoTau` or
+`psi + (1 - 2 psi) * x_i / rhoTau`.
+
+This differs from the optional design where scores are first normalized to a
+fixed budget and then converted to lottery probabilities. The repository keeps
+the older exact-budget/fixed-budget code and `budget_allocation` figure only as
+a comparison baseline. The current integrated contract behavior is:
+
+```text
+payout_i in {0, rhoTau}
+sum_i payout_i is random
+pool funding covers N * rhoTau maximum exposure
+rewardBudget is an expected-payout cap
+```
 
 ## Theory-To-Prototype Mapping
 
-| Term | Meaning | Prototype status |
+| Paper term | Prototype meaning | Status |
 | --- | --- | --- |
-| `rho_tau` / `rhoTau` | Per-coordinate payout amount and reward cap scale. A winner receives exactly `rhoTau`; a loser receives `0`. | Implemented as a public circuit input and contract public signal. |
-| `gamma` / `gammaScaled` | Lower and upper lottery-probability clamp. The circuit enforces `q_i in [gamma, 1-gamma]`. | Implemented as public `gammaScaled = floor(gamma * 2^32)`. Current integrated run uses `gamma = 0.05`. |
-| `eta` | Target distinguishability for the whole public reward transcript. | Design parameter. The prototype measures attack advantage but does not enforce a chosen `eta`. |
-| `D` | Number of public payout coordinates affected by one hidden report. | Direct ring exposure is `D_graph = 2`; measured probability exposure includes smaller second-order effects across more coordinates. |
-| `eta / D` | Coordinate-level leakage target when the transcript budget is split across affected coordinates. | Design guidance only. The data reports actual `q_j` movement so the paper can choose a conservative correction. |
-| `kappa` | Reward scale. It controls how strongly peer agreement increases `x_i`, and therefore `q_i`. | Implemented as a public input and swept in experiments. |
-| `p_tilde` | Empirical frequency normalizer used by the inverse-frequency score. | Implemented as same-dispute leave-one-out, stake-weighted, smoothed plug-in normalizer. |
-| `rewardBudget B` | Expected-payout cap used by the circuit. It is not an exact final payout sum. | Implemented: circuit checks expected payout mass is at most `B`; contract funds maximum exposure separately. |
-| nonce source | Private material bound into the reward sidecar leaf. | Experimental. Full MACI flow derives it from MACI vote command salts. |
-| lottery seed source | Public randomness used for Bernoulli draws. | Experimental commit-reveal: seed is committed before root registration and revealed after root registration. |
-| public inputs | Values visible to verifier and contract. | `payouts`, `recipients`, `stakes`, `smoothing`, `kappa`, `scale`, `rhoTau`, `disputeId`, `finalStateRoot`, `rewardBudget`, `gammaScaled`, `randomSeed`. |
-| private inputs | Witness values hidden by the proof. | reports, nonces, MACI state indices, voter ids, nonce commitments, Merkle paths, expected scores, raw thresholds, and division remainders. |
-
-## Reward Semantics
-
-The active reward rule is independent per coordinate:
-
-```text
-x_i         = smoothed inverse-frequency peer-agreement score
-q_i         = clamp(x_i / rhoTau, gamma, 1 - gamma)
-u_i         = low32(Poseidon(seed, i))
-payout_i    = rhoTau if u_i < q_i * 2^32, otherwise 0
-```
-
-The proof enforces the clamp and threshold comparison inside the circuit. The
-public payout vector must therefore contain only `0` and `rhoTau`.
-
-The per-coordinate draws are separated as `Poseidon(seed, i)`; the independence
-claim here is computational pseudorandomness, not statistical independence.
-
-The total payout is random. The integrated run funds the pool for maximum
-exposure:
-
-```text
-N * rhoTau = 8 * 3,000,000 = 24,000,000
-```
-
-The expected-payout budget is a cap on probability mass. With
-`gamma = 0.05`, the gamma floor alone contributes:
-
-```text
-N * gamma * rhoTau = 8 * 0.05 * 3,000,000 = 1,200,000
-```
-
-The fixed-budget data files and figure remain because they are useful as a
-baseline for comparing exact-budget allocation with low-exposure Bernoulli
-lottery payouts. They should not be cited as the current contract behavior.
+| `rho_tau` / `rhoTau` | Per-coordinate payout amount. A winning coordinate receives exactly `rhoTau`; a losing coordinate receives `0`. | Fully implemented as a public circuit input and checked by the contract. |
+| `psi` | Nondegenerate lottery floor. Floor-adjusted mode maps `x/rho` to `psi + (1 - 2 psi)x/rho`. | Fully implemented as public `psiScaled`; enforced inside the circuit. |
+| `rho_eff` | Effective reward capacity `(1 - 2 psi)rhoTau`. | Reported by reference vectors and privacy-audit summaries. |
+| `eta` | Public transcript distinguishability target. | Measured empirically; not enforced as a circuit parameter. |
+| `delta` | Incentive gap or utility slack. | Measured empirically as expected truthful-minus-shortcut reward gap divided by `rhoTau`. |
+| `D_i` | Number of public payout coordinates whose probabilities change when reporter `i`'s hidden report is flipped. | Measured by `privacy_audit_exposure.csv`; max and average reported. |
+| `kappa` | Peer-prediction reward scale. Larger values make agreement scores translate into higher lottery probability. | Implemented as a public input and swept in sensitivity experiments. |
+| `p_tilde` | Empirical frequency normalizer used by inverse-frequency scoring. | Implemented as same-dispute, stake-weighted leave-one-out with smoothing. |
+| `rewardBudget B` | Expected-payout cap, not exact final payout budget. | Implemented in-circuit as `sum_i q_i rhoTau <= B`; contract separately funds max exposure. |
+| nonce source | Private opening bound into the reward sidecar leaf. | Experimental. Full MACI flow derives it from MACI vote command salts. |
+| lottery seed source | Public randomness used for Bernoulli draws. | Experimental commit-reveal fixed after reward root registration. |
+| public inputs | Values visible to verifier and contract. | `payouts`, `recipients`, `stakes`, `smoothing`, `kappa`, `scale`, `rhoTau`, `disputeId`, `finalStateRoot`, `rewardBudget`, `lotteryMode`, `psiScaled`, `randomSeed`. |
+| private inputs | Witness values hidden by the proof. | Reports, nonces, MACI state indices, voter ids, nonce commitments, Merkle paths, scores, thresholds, and division remainders. |
 
 ## Public Transcript Exposure
 
-The paper-level privacy object is the full public reward transcript: payout
-vector, verifier public inputs, finalization transaction data, claimable
-balances, and on-chain reward state.
+The privacy object is the full public reward transcript: payout vector,
+verifier public inputs, finalization transaction data, claimable balances, and
+on-chain reward state.
 
 The peer graph is a ring:
 
@@ -95,20 +108,19 @@ D_graph = 2
 ```
 
 The same-dispute leave-one-out normalizer also changes other voters'
-probabilities. The script `poc/scripts/run_reward_experiments.js` flips each
-report and records the per-coordinate change in `q_j`. For the included
-profiles, the largest observed values are:
+probabilities. The privacy audit flips each hidden report and records every
+public payout coordinate whose lottery probability changes. For the synthetic
+audit:
 
-| gamma | Max direct `|Delta q|` | Max secondary `|Delta q|` |
-| ---: | ---: | ---: |
-| 0.02 | `0.96000000` | `0.20580666` |
-| 0.05 | `0.90000000` | `0.18882766` |
-| 0.10 | `0.80000000` | `0.18882766` |
+```text
+max D_i = 8
+avg D_i = 7.237063
+min D_i = 4
+```
 
-So the ring graph has bounded first-order exposure, but the current
-same-dispute normalizer creates measurable second-order transcript movement.
-The CSV gives the paper a data-backed alternative to simply treating all
-`N = 8` coordinates as equally affected.
+The measured `D_i` count is an accounting report. It counts payout coordinates;
+claimable balances mirror those payouts. Public root/id/seed fields are part of
+the transcript description but are not counted as payout coordinates.
 
 ## Normalizer Scope
 
@@ -121,67 +133,97 @@ p_tilde_i(0) = 1 - p_tilde_i(1)
 ```
 
 This is a practical plug-in normalizer for independent dispute questions. It is
-not a clean estimator of a universal distribution across disputes. The formal
+not a clean estimator of one universal distribution across disputes. The formal
 incentive guarantee should be read conditionally: the chosen `p_tilde` must
 stay inside the truthfulness interval `[beta, alpha]`.
 
 Implemented safeguards are smoothing, denominator checks, public-input range
-checks, gamma clamp checks, and an expected-payout cap. The prototype does not
-learn historical calibration, clip `p_tilde` into `[beta, alpha]`, or implement
-a production fallback policy.
+checks, `psi` range checks, threshold range checks, and an expected-payout cap.
+The prototype does not learn historical calibration, clip `p_tilde` into
+`[beta, alpha]`, or implement a production fallback policy.
 
-## Figure Notes
+## Privacy-Audit Experiment
 
-`e2e_overhead` compares the MACI proof phase, reward proof phase, and reward gas
-operations from the same Anvil run. `Verify + finalize` is the largest reward
-operation because it verifies the Groth16 proof and records claimable payouts.
-
-`reward_sensitivity` sweeps `kappa`. Larger `kappa` means peer agreement has
-more influence on the lottery threshold. Equal stakes are used here, so changes
-come from reports, reward scale, and lottery sampling rather than stake
-weighting.
-
-`lottery_confidence` repeats the sensitivity run over 512 deterministic lottery
-samples and plots a confidence interval for the mean largest-payout share.
-
-`attack_simulation` samples two worlds that differ only in one target report.
-For each `k = 1..50`, it draws `M = 10000` transcripts per world and evaluates
-the optimal likelihood-ratio classifier. The plotted theory curve is the
-clipped advantage expression
-`eta * sqrt(k / (2 gamma (1 - gamma))) / 2`. With the current high-signal
-parameters, both empirical and clipped theory curves reach the 50% ceiling.
-
-`budget_allocation` is the legacy exact-budget baseline. It is kept to compare
-exact-budget and Bernoulli semantics, not to describe the current
-`IntegratedRewardPool` payout rule.
-
-`reward_scaling` is standalone. It compiles a max-size `N_max = 64` reward
-circuit and varies active inputs. Because the Bernoulli rule has a gamma floor,
-capacity planning must consider the max-size coordinate count, not only the
-number of nonzero-stake voters.
-
-## Current Measurement Snapshot
-
-The latest synchronized full MACI + reward Anvil run was generated from the
-working tree based on commit `e8cf1a4` and produced:
+`poc/scripts/run_privacy_audit.py` runs deterministic synthetic disputes under:
 
 ```text
-MACI proof phase: 124.084 s
-Reward proof phase: 4.618 s
-Reward circuit: 26,080 constraints, 33 public inputs, 96 private inputs
-Commit seed: 49,899 gas
-Register root: 98,837 gas
-Reveal seed: 58,248 gas
-Fund pool: 47,396 gas
-Verify + finalize: 557,212 gas
-Claim: 30,707 gas
+baseline
+psi = 0.05
+psi = 0.10
+psi = 0.20
+psi = 0.30
 ```
 
-The public payout vector in that run was:
+For each sampled reporter, the harness saves the hidden report label,
+public payout or claimable amount, public transcript fields, score `x_i`,
+lottery outcome, `psi`, `rhoTau`, `rho_eff`, `D_i`, proof time, gas,
+constraints, and public/private input counts.
 
-```text
-[0, 0, 3000000, 0, 0, 0, 0, 0]
-```
+Hidden reports are logged only by the synthetic audit harness. The production
+flow keeps reports private.
+
+Main metrics:
+
+| Metric | Meaning |
+| --- | --- |
+| payout distribution by hidden report | How often report-0 and report-1 coordinates win. |
+| empirical `eta` | Total variation proxy, computed as the absolute difference in win probability by hidden report. |
+| payout classifier accuracy | Best threshold classifier using only one public payout. |
+| transcript classifier accuracy | Simple threshold classifier over a public-transcript score derived from nearby payouts and total payout. |
+| AUC | Ranking quality of the public-transcript score, direction-normalized. |
+| expected reward gap | Expected truthful reward minus no-effort shortcut reward in the synthetic generator. |
+| empirical `delta` | Expected reward gap divided by `rhoTau`. |
+| selective bribery enrichment | Target-report enrichment among the top `pi` share selected by public payout or transcript score. |
+
+## Measurement Summary
+
+Latest synchronized run:
+
+| Mode | Constraints | Public | Private | Proof ms | Finalize gas | Claim gas | `rho_eff` | Empirical `eta` | Transcript accuracy | Reward gap | Max `D_i` |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| baseline | `30,164` | `34` | `112` | `2,630` | `584,313` | `30,729` | `3,000,000` | `0.036147` | `0.539185` | `194,293.61` | `8` |
+| `psi=0.05` | `30,164` | `34` | `112` | `2,630` | `584,313` | `30,729` | `2,700,000` | `0.032533` | `0.533058` | `174,864.25` | `8` |
+| `psi=0.10` | `30,164` | `34` | `112` | `2,630` | `584,313` | `30,729` | `2,400,000` | `0.028918` | `0.519555` | `155,434.89` | `8` |
+| `psi=0.20` | `30,164` | `34` | `112` | `2,630` | `584,313` | `30,729` | `1,800,000` | `0.021688` | `0.525618` | `116,576.16` | `8` |
+| `psi=0.30` | `30,164` | `34` | `112` | `2,630` | `584,313` | `30,729` | `1,200,000` | `0.014459` | `0.509848` | `77,717.44` | `8` |
+
+The floor adjustment has the intended direction in this synthetic audit:
+larger `psi` makes public payouts weaker receipts and lowers reward capacity.
+
+## Figures
+
+`privacy_payout_distributions` compares win probability conditional on hidden
+report 0 versus hidden report 1.
+
+![Payout distributions](figures/privacy_payout_distributions.png)
+
+`privacy_inference_accuracy` shows best payout-only and simple public-transcript
+classifier accuracy as `psi` changes.
+
+![Inference accuracy](figures/privacy_inference_accuracy.png)
+
+`privacy_incentive_gap` shows the reward-capacity tradeoff: expected reward gap
+and `rho_eff` both fall as `psi` increases.
+
+![Incentive gap](figures/privacy_incentive_gap.png)
+
+`privacy_empirical_frontier` plots empirical `eta` against empirical `delta`.
+
+![Empirical frontier](figures/privacy_empirical_frontier.png)
+
+`privacy_selective_bribery` reports target-report enrichment when a briber
+selects the top `pi` share by public transcript score.
+
+![Selective bribery](figures/privacy_selective_bribery.png)
+
+`privacy_exposure_report` summarizes the measured payout-coordinate exposure
+counts.
+
+![Exposure report](figures/privacy_exposure_report.png)
+
+The older `budget_allocation` figure is the exact-budget comparison baseline,
+not the current payout rule. `reward_scaling` is a standalone `N_max = 64`
+capacity experiment, not a full MACI deployment at 64 voters.
 
 ## Data Files
 
@@ -191,16 +233,15 @@ The public payout vector in that run was:
 | `anvil_reward_e2e_latest.json` | Reward-only Anvil run. |
 | `proof_shape.csv` | Reward circuit constraint and input counts. |
 | `gas_breakdown.csv` | Reward gas from full MACI plus reward run. |
-| `reward_only_gas_breakdown.csv` | Reward-only gas comparison. |
-| `e2e_overhead.csv` | Proof time and reward gas used by the overhead figure. |
-| `exposure_probability_sanity.csv` | Per-coordinate `q_j` movement after one report flip. |
-| `attack_simulation.csv` | Repeated-round transcript distinguishing simulation. |
-| `reward_sensitivity.csv` | Reward-scale sweep. |
-| `lottery_confidence.csv` | 512-sample lottery confidence data. |
-| `budget_allocation.csv` | Legacy exact-budget baseline payout vector. |
-| `stake_concentration.csv` | Public stake concentration sweep. |
-| `operating_cost_projection.csv` | Reward-layer operating cost scenarios. |
+| `e2e_overhead.csv` | MACI proof time, reward proof time, and reward gas. |
+| `privacy_audit_samples.csv` | Per-reporter synthetic privacy-audit samples. |
+| `privacy_audit_summary.csv` | Summary metrics by mode and `psi`. |
+| `privacy_audit_exposure.csv` | Per-report flip exposure observations. |
+| `privacy_audit_exposure_summary.csv` | Min/average/max `D_i` by mode. |
+| `privacy_audit_selective_bribery.csv` | Selective bribery precision/enrichment audit. |
+| `privacy_audit_incentive_gap.csv` | Per-instance truthful-versus-shortcut reward gaps. |
 | `reward_scaling.csv` | Standalone `N_max = 64` capacity experiment. |
+| `operating_cost_projection.csv` | Reward-layer operating cost scenarios. |
 
 ## Regeneration
 
@@ -211,17 +252,26 @@ cd poc
 python3 -m venv .venv
 . .venv/bin/activate
 pip install -r requirements.txt
-npm run experiments:reward-data
-npm run experiments:attack-simulation
-npm run experiments:reward-scaling
-npm run experiments:reward-plots
+npm run experiments:reward
 ```
 
-`npm run experiments:reward` runs the same full sequence in one command.
+For only the privacy audit:
+
+```bash
+cd poc
+. .venv/bin/activate
+npm run experiments:privacy-audit
+```
+
+Useful deterministic knobs:
+
+```bash
+PRIVACY_AUDIT_SEED=20260614 PRIVACY_AUDIT_INSTANCES=2000 npm run experiments:privacy-audit
+```
 
 ## Scope
 
 The integrated run is fixed at `N = 8`. The `N_max = 64` data is a standalone
-capacity experiment, not a full MACI deployment at 64 voters. The prototype is
-not audited. Sybil policy, production randomness, registration policy, live fee
-quotes, and validation of actual human effort are outside this repository.
+capacity experiment. The prototype is not audited. Sybil policy, production
+randomness, registration policy, live fee quotes, and validation of actual
+human effort are outside this repository.

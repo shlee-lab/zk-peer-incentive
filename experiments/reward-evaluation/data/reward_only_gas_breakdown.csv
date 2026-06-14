@@ -1,5 +1,7 @@
 operation,gas
+commit,49911
 register,98849
-fund,47408
-finalize,577279
-claim,30719
+reveal,58272
+fund,47430
+finalize,604404
+claim,30741

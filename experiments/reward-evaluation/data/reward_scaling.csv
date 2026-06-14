@@ -1,5 +1,5 @@
-maxVoters,activeVoters,utilization,merkleDepth,publicInputs,privateInputs,constraints,wires,labels,compileMs,witnessMs,setupMs,exportVkMs,proveMs,verifyMs,proveMsPerActiveVoter,totalPayout,paidRecipientCount,winnerCount,gammaScaled,maxExposure,artifactDir,verifyOutput
-64,8,0.125000,6,201,960,249288,249226,603664,24720,673,346541,1025,17238,937,2155,18000000,6,6,214748364,192000000,poc/artifacts/scaling/max64/active8,OK
-64,16,0.250000,6,201,960,249288,249226,603664,24720,537,346541,1025,17956,887,1122,21000000,7,7,214748364,192000000,poc/artifacts/scaling/max64/active16,OK
-64,32,0.500000,6,201,960,249288,249226,603664,24720,711,346541,1025,20341,918,636,24000000,8,8,214748364,192000000,poc/artifacts/scaling/max64/active32,OK
-64,64,1.000000,6,201,960,249288,249226,603664,24720,638,346541,1025,16149,1052,252,36000000,12,12,214748364,192000000,poc/artifacts/scaling/max64/active64,OK
+maxVoters,activeVoters,utilization,merkleDepth,publicInputs,privateInputs,constraints,wires,labels,compileMs,witnessMs,setupMs,exportVkMs,proveMs,verifyMs,proveMsPerActiveVoter,totalPayout,paidRecipientCount,winnerCount,lotteryMode,psiScaled,rhoEff,maxExposure,artifactDir,verifyOutput
+64,8,0.125000,6,202,1088,281932,281676,637457,31100,609,422772,889,25412,816,3176,24000000,8,8,floor_adjusted,429496729,2400000,192000000,poc/artifacts/scaling/max64/active8,OK
+64,16,0.250000,6,202,1088,281932,281676,637457,31100,612,422772,889,25278,797,1580,21000000,7,7,floor_adjusted,429496729,2400000,192000000,poc/artifacts/scaling/max64/active16,OK
+64,32,0.500000,6,202,1088,281932,281676,637457,31100,722,422772,889,26159,865,817,27000000,9,9,floor_adjusted,429496729,2400000,192000000,poc/artifacts/scaling/max64/active32,OK
+64,64,1.000000,6,202,1088,281932,281676,637457,31100,566,422772,889,24695,820,386,42000000,14,14,floor_adjusted,429496729,2400000,192000000,poc/artifacts/scaling/max64/active64,OK

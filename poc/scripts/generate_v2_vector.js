@@ -38,7 +38,7 @@ function recipientAddresses() {
   ];
 }
 
-function gammaScaled(numerator, denominator, bits = 32n) {
+function probabilityScaled(numerator, denominator, bits = 32n) {
   return (BigInt(numerator) * (1n << bits)) / BigInt(denominator);
 }
 
@@ -73,7 +73,8 @@ function v2Inputs() {
     scale: 1_000n,
     rhoTau: 3_000_000n,
     rewardBudget: 24_000_000n,
-    gammaScaled: gammaScaled(5n, 100n),
+    lotteryMode: 1n,
+    psiScaled: probabilityScaled(10n, 100n),
   };
 }
 
@@ -97,7 +98,7 @@ async function main() {
 
   const vector = {
     version: "v2",
-    description: "Coordinate-wise Bernoulli lottery reward vector bound to a MACI reward sidecar state root.",
+    description: "Floor-adjusted Bernoulli lottery reward vector bound to a MACI reward sidecar state root.",
     inputs: rewardInputs,
     seedPreimage: seed.seedPreimage.toString(),
     seedSalt: seed.salt,
@@ -114,7 +115,11 @@ async function main() {
     lotteryBits: allocation.lotteryBits,
     lotteryScale: allocation.lotteryScale.toString(),
     rhoTau: allocation.rhoTau.toString(),
-    gammaScaled: allocation.gammaScaled.toString(),
+    lotteryMode: allocation.lotteryMode,
+    lotteryModeCode: allocation.lotteryModeCode.toString(),
+    psiScaled: allocation.psiScaled.toString(),
+    rhoEff: allocation.rhoEff.toString(),
+    rhoEffNumerator: allocation.rhoEffNumerator.toString(),
     upperThreshold: allocation.upperThreshold.toString(),
     drawHashes: allocation.drawHashes.map((hash) => hash.toString()),
     draws: allocation.draws.map((draw) => draw.toString()),
@@ -123,6 +128,8 @@ async function main() {
     rewardRemainders: rewardWitness.map((reward) => reward.remainder.toString()),
     rawThresholds: allocation.rawThresholds.map((threshold) => threshold.toString()),
     thresholdRemainders: allocation.thresholdRemainders.map((remainder) => remainder.toString()),
+    adjustedThresholds: allocation.adjustedThresholds.map((threshold) => threshold.toString()),
+    adjustedThresholdRemainders: allocation.adjustedThresholdRemainders.map((remainder) => remainder.toString()),
     thresholds: allocation.thresholds.map((threshold) => threshold.toString()),
     expectedPayoutNumerator: allocation.expectedPayoutNumerator.toString(),
     payouts,
@@ -139,6 +146,8 @@ async function main() {
     rewardRemainders: vector.rewardRemainders,
     rawThresholds: vector.rawThresholds,
     thresholdRemainders: vector.thresholdRemainders,
+    adjustedThresholds: vector.adjustedThresholds,
+    adjustedThresholdRemainders: vector.adjustedThresholdRemainders,
     payouts,
     recipients: inputs.recipients,
     stakes: inputs.stakes,
@@ -149,7 +158,8 @@ async function main() {
     disputeId: inputs.disputeId,
     finalStateRoot: finalState.finalStateRoot,
     rewardBudget: inputs.rewardBudget,
-    gammaScaled: inputs.gammaScaled,
+    lotteryMode: inputs.lotteryMode,
+    psiScaled: inputs.psiScaled,
     randomSeed: seed.randomSeed,
   };
 

@@ -1,8 +1,8 @@
 metric,value
 voters,8
 merkle_depth,3
-public_inputs,33
-private_inputs,96
-constraints,26080
-allocation_mode,coordinate_bernoulli_lottery
+public_inputs,34
+private_inputs,112
+constraints,30164
+allocation_mode,baseline_or_floor_adjusted_bernoulli_lottery
 seed_mode,external_commit_reveal_seed

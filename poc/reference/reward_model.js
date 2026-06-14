@@ -207,6 +207,86 @@ function lowBits(value, bits) {
 
 let poseidonPromise;
 
+const LOTTERY_MODE_BASELINE = 0n;
+const LOTTERY_MODE_FLOOR_ADJUSTED = 1n;
+
+function normalizeLotteryMode(mode = LOTTERY_MODE_BASELINE) {
+  if (typeof mode === "string") {
+    if (mode === "baseline" || mode === "reward_correctness") return LOTTERY_MODE_BASELINE;
+    if (mode === "floor_adjusted" || mode === "receipt_resistance") {
+      return LOTTERY_MODE_FLOOR_ADJUSTED;
+    }
+  }
+  const code = toBigInt(mode, "lotteryMode");
+  if (code !== LOTTERY_MODE_BASELINE && code !== LOTTERY_MODE_FLOOR_ADJUSTED) {
+    throw new Error("lotteryMode must be 0/baseline or 1/floor_adjusted");
+  }
+  return code;
+}
+
+function lotteryModeLabel(mode) {
+  const code = normalizeLotteryMode(mode);
+  return code === LOTTERY_MODE_FLOOR_ADJUSTED ? "floor_adjusted" : "baseline";
+}
+
+function computeLotteryThreshold({
+  scoreScaled,
+  rhoTau,
+  psiScaled = 0n,
+  lotteryMode = LOTTERY_MODE_BASELINE,
+  lotteryBits = 32,
+}) {
+  if (!Number.isInteger(lotteryBits) || lotteryBits <= 0 || lotteryBits > 64) {
+    throw new Error("lotteryBits must be an integer in [1, 64]");
+  }
+  const modeCode = normalizeLotteryMode(lotteryMode);
+  const score = toBigInt(scoreScaled, "scoreScaled");
+  const brhoTau = toBigInt(rhoTau, "rhoTau");
+  const psi = toBigInt(psiScaled, "psiScaled");
+  if (score < 0n) throw new Error("scoreScaled must be non-negative");
+  if (brhoTau <= 0n) throw new Error("rhoTau must be positive");
+
+  const lotteryScale = 1n << BigInt(lotteryBits);
+  if (modeCode === LOTTERY_MODE_BASELINE && psi !== 0n) {
+    throw new Error("baseline lottery mode requires psiScaled = 0");
+  }
+  if (modeCode === LOTTERY_MODE_FLOOR_ADJUSTED && (psi <= 0n || psi * 2n >= lotteryScale)) {
+    throw new Error("floor-adjusted mode requires psiScaled in (0, 2^(lotteryBits-1))");
+  }
+
+  const rawNumerator = score * lotteryScale;
+  const rawThreshold = rawNumerator / brhoTau;
+  const thresholdRemainder = rawNumerator % brhoTau;
+  if (rawThreshold > lotteryScale) {
+    throw new Error("scoreScaled must be at most rhoTau for lottery threshold computation");
+  }
+
+  const slopeScaled = lotteryScale - 2n * psi;
+  const adjustedNumerator = rawThreshold * slopeScaled;
+  const adjustedThreshold = adjustedNumerator / lotteryScale;
+  const adjustedThresholdRemainder = adjustedNumerator % lotteryScale;
+  const floorAdjustedThreshold = psi + adjustedThreshold;
+  const threshold =
+    modeCode === LOTTERY_MODE_FLOOR_ADJUSTED ? floorAdjustedThreshold : rawThreshold;
+  const rhoEffNumerator = slopeScaled * brhoTau;
+  const rhoEff = rhoEffNumerator / lotteryScale;
+
+  return {
+    lotteryMode: lotteryModeLabel(modeCode),
+    lotteryModeCode: modeCode,
+    lotteryScale,
+    rhoTau: brhoTau,
+    psiScaled: psi,
+    rhoEff,
+    rhoEffNumerator,
+    rawThreshold,
+    thresholdRemainder,
+    adjustedThreshold,
+    adjustedThresholdRemainder,
+    threshold,
+  };
+}
+
 async function computeLotterySeed({ nonces, disputeId, stateRoot }) {
   if (!Array.isArray(nonces) || nonces.length === 0) {
     throw new Error("nonces must be a non-empty array");
@@ -409,7 +489,8 @@ async function computeBernoulliLotteryPayouts({
   kappa = 1n,
   scale = 1_000_000n,
   rhoTau,
-  gammaScaled,
+  psiScaled = 0n,
+  lotteryMode = LOTTERY_MODE_BASELINE,
   rewardBudget,
   lotteryBits = 32,
 }) {
@@ -420,12 +501,9 @@ async function computeBernoulliLotteryPayouts({
 
   const brhoTau = toBigInt(rhoTau, "rhoTau");
   if (brhoTau <= 0n) throw new Error("rhoTau must be positive");
-  const bgammaScaled = toBigInt(gammaScaled, "gammaScaled");
+  const modeCode = normalizeLotteryMode(lotteryMode);
+  const bpsiScaled = toBigInt(psiScaled, "psiScaled");
   const lotteryScale = 1n << BigInt(lotteryBits);
-  if (bgammaScaled <= 0n || bgammaScaled * 2n >= lotteryScale) {
-    throw new Error("gammaScaled must be in (0, 2^(lotteryBits-1))");
-  }
-  const upperThreshold = lotteryScale - bgammaScaled;
   const budget = rewardBudget === undefined ? undefined : toBigInt(rewardBudget, "rewardBudget");
 
   const rewardWitness = computeRewardDivisionWitness({
@@ -440,33 +518,39 @@ async function computeBernoulliLotteryPayouts({
 
   const rawThresholds = [];
   const thresholdRemainders = [];
+  const adjustedThresholds = [];
+  const adjustedThresholdRemainders = [];
   const thresholds = [];
   const drawHashes = [];
   const draws = [];
   const wins = [];
   const payouts = [];
   let expectedPayoutNumerator = 0n;
+  let rhoEff = 0n;
+  let rhoEffNumerator = 0n;
   for (let i = 0; i < reports.length; i += 1) {
-    const numerator = rewardWitness[i].scaled * lotteryScale;
-    const rawThreshold = numerator / brhoTau;
-    const thresholdRemainder = numerator % brhoTau;
-    const threshold =
-      rawThreshold < bgammaScaled
-        ? bgammaScaled
-        : rawThreshold > upperThreshold
-          ? upperThreshold
-          : rawThreshold;
+    const thresholdData = computeLotteryThreshold({
+      scoreScaled: rewardWitness[i].scaled,
+      rhoTau: brhoTau,
+      psiScaled: bpsiScaled,
+      lotteryMode: modeCode,
+      lotteryBits,
+    });
     const drawHash = await poseidonHash([seed, BigInt(i)]);
     const draw = lowBits(drawHash, lotteryBits);
-    const win = draw < threshold ? 1n : 0n;
-    rawThresholds.push(rawThreshold);
-    thresholdRemainders.push(thresholdRemainder);
-    thresholds.push(threshold);
+    const win = draw < thresholdData.threshold ? 1n : 0n;
+    rawThresholds.push(thresholdData.rawThreshold);
+    thresholdRemainders.push(thresholdData.thresholdRemainder);
+    adjustedThresholds.push(thresholdData.adjustedThreshold);
+    adjustedThresholdRemainders.push(thresholdData.adjustedThresholdRemainder);
+    thresholds.push(thresholdData.threshold);
     drawHashes.push(drawHash);
     draws.push(draw);
     wins.push(win);
     payouts.push(win * brhoTau);
-    expectedPayoutNumerator += threshold * brhoTau;
+    expectedPayoutNumerator += thresholdData.threshold * brhoTau;
+    rhoEff = thresholdData.rhoEff;
+    rhoEffNumerator = thresholdData.rhoEffNumerator;
   }
 
   if (budget !== undefined && expectedPayoutNumerator > budget * lotteryScale) {
@@ -478,12 +562,18 @@ async function computeBernoulliLotteryPayouts({
     lotteryBits,
     lotteryScale,
     rhoTau: brhoTau,
-    gammaScaled: bgammaScaled,
-    upperThreshold,
+    lotteryMode: lotteryModeLabel(modeCode),
+    lotteryModeCode: modeCode,
+    psiScaled: bpsiScaled,
+    upperThreshold: lotteryScale - bpsiScaled,
+    rhoEff,
+    rhoEffNumerator,
     rewardBudget: budget,
     rewardWitness,
     rawThresholds,
     thresholdRemainders,
+    adjustedThresholds,
+    adjustedThresholdRemainders,
     thresholds,
     drawHashes,
     draws,
@@ -734,6 +824,7 @@ module.exports = {
   computeFixedBudgetPayouts,
   computeFixedBudgetLotteryPayouts,
   computeBernoulliLotteryPayouts,
+  computeLotteryThreshold,
   computeLeaveOneOutNormalizers,
   computeExternalLotterySeed,
   computeLotterySeed,
@@ -748,6 +839,10 @@ module.exports = {
   hashFinalStateLeaf,
   hashNonceCommitment,
   mismatchRatios,
+  normalizeLotteryMode,
+  lotteryModeLabel,
+  LOTTERY_MODE_BASELINE,
+  LOTTERY_MODE_FLOOR_ADJUSTED,
   mul,
   poseidonHash,
   splitLeaveOneOutFrequency,

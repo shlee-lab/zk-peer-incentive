@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-06-13T03:37:36.787Z",
+  "generatedAt": "2026-06-14T04:37:17.228Z",
   "maxVoters": 64,
   "activeVoterCounts": [
     8,
@@ -9,6 +9,7 @@
   ],
   "ptau": "/tmp/maci-official/zkeys/powersOfTau28_hez_final_19.ptau",
   "relation": "fixed-capacity coordinate-wise Bernoulli reward circuit utilization",
-  "gammaScaled": "214748364",
+  "lotteryMode": "floor_adjusted",
+  "psiScaled": "429496729",
   "note": "Artifacts are generated under poc/artifacts/scaling and are intentionally gitignored."
 }

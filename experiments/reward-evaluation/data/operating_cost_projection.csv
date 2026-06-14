@@ -1,7 +1,7 @@
 network,voters,gasPriceGwei,ethUsd,registerGas,commitSeedGas,revealSeedGas,fundGas,finalizeBaseGas,perRecipientFinalizeGas,finalizeGas,claimGasPerRecipient,allClaimGas,adminGas,totalOperationalGas,totalEth,totalUsd,note
-Ethereum L1,10,20,3000,98837,49899,58248,47396,381212,22000,601212,30707,307070,855592,1162662,0.02325324,69.76,deployment excluded; Arbitrum row is execution-gas-only illustrative model
-Ethereum L1,100,20,3000,98837,49899,58248,47396,381212,22000,2581212,30707,3070700,2835592,5906292,0.11812584,354.38,deployment excluded; Arbitrum row is execution-gas-only illustrative model
-Ethereum L1,1000,20,3000,98837,49899,58248,47396,381212,22000,22381212,30707,30707000,22635592,53342592,1.06685184,3200.56,deployment excluded; Arbitrum row is execution-gas-only illustrative model
-Arbitrum execution,10,0.1,3000,98837,49899,58248,47396,381212,22000,601212,30707,307070,855592,1162662,0.00011627,0.35,deployment excluded; Arbitrum row is execution-gas-only illustrative model
-Arbitrum execution,100,0.1,3000,98837,49899,58248,47396,381212,22000,2581212,30707,3070700,2835592,5906292,0.00059063,1.77,deployment excluded; Arbitrum row is execution-gas-only illustrative model
-Arbitrum execution,1000,0.1,3000,98837,49899,58248,47396,381212,22000,22381212,30707,30707000,22635592,53342592,0.00533426,16.00,deployment excluded; Arbitrum row is execution-gas-only illustrative model
+Ethereum L1,10,20,3000,98837,49899,58248,47418,408313,22000,628313,30729,307290,882715,1190005,0.02380010,71.40,deployment excluded; Arbitrum row is execution-gas-only illustrative model
+Ethereum L1,100,20,3000,98837,49899,58248,47418,408313,22000,2608313,30729,3072900,2862715,5935615,0.11871230,356.14,deployment excluded; Arbitrum row is execution-gas-only illustrative model
+Ethereum L1,1000,20,3000,98837,49899,58248,47418,408313,22000,22408313,30729,30729000,22662715,53391715,1.06783430,3203.50,deployment excluded; Arbitrum row is execution-gas-only illustrative model
+Arbitrum execution,10,0.1,3000,98837,49899,58248,47418,408313,22000,628313,30729,307290,882715,1190005,0.00011900,0.36,deployment excluded; Arbitrum row is execution-gas-only illustrative model
+Arbitrum execution,100,0.1,3000,98837,49899,58248,47418,408313,22000,2608313,30729,3072900,2862715,5935615,0.00059356,1.78,deployment excluded; Arbitrum row is execution-gas-only illustrative model
+Arbitrum execution,1000,0.1,3000,98837,49899,58248,47418,408313,22000,22408313,30729,30729000,22662715,53391715,0.00533917,16.02,deployment excluded; Arbitrum row is execution-gas-only illustrative model

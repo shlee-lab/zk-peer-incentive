@@ -243,6 +243,10 @@ async function main() {
     metrics.context = {
       disputeId: disputeId.toString(),
       finalStateRoot: finalStateRoot.toString(),
+      rewardMode: fixture.lotteryMode === "0" ? "baseline" : "floor_adjusted",
+      lotteryMode: fixture.lotteryMode,
+      psiScaled: fixture.psiScaled,
+      rhoEff: fixture.rhoEff,
       totalPayout: totalPayout.toString(),
       claimIndex: claimRecipient.index,
       claimant,
@@ -254,7 +258,9 @@ async function main() {
     };
     writeJson(path.join(EXPERIMENT_DATA_DIR, "anvil_reward_e2e_latest.json"), metrics);
     writeCsv(path.join(EXPERIMENT_DATA_DIR, "reward_only_gas_breakdown.csv"), [
+      { operation: "commit", gas: metrics.transactions.commitRandomSeed.gas },
       { operation: "register", gas: metrics.transactions.registerFinalState.gas },
+      { operation: "reveal", gas: metrics.transactions.revealRandomSeed.gas },
       { operation: "fund", gas: metrics.transactions.fundDispute.gas },
       { operation: "finalize", gas: metrics.transactions.finalizeRewards.gas },
       { operation: "claim", gas: metrics.transactions.claim.gas },

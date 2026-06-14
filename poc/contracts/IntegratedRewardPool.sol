@@ -15,8 +15,9 @@ contract IntegratedRewardPool {
     uint256 public constant POLL_ID_SIGNAL_INDEX = 28;
     uint256 public constant FINAL_REWARD_STATE_ROOT_SIGNAL_INDEX = 29;
     uint256 public constant REWARD_BUDGET_SIGNAL_INDEX = 30;
-    uint256 public constant GAMMA_SCALED_SIGNAL_INDEX = 31;
-    uint256 public constant RANDOM_SEED_SIGNAL_INDEX = 32;
+    uint256 public constant LOTTERY_MODE_SIGNAL_INDEX = 31;
+    uint256 public constant PSI_SCALED_SIGNAL_INDEX = 32;
+    uint256 public constant RANDOM_SEED_SIGNAL_INDEX = 33;
     uint256 public constant DISPUTE_ID_SIGNAL_INDEX = POLL_ID_SIGNAL_INDEX;
     uint256 public constant FINAL_STATE_ROOT_SIGNAL_INDEX = FINAL_REWARD_STATE_ROOT_SIGNAL_INDEX;
 

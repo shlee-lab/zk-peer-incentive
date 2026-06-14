@@ -1,0 +1,48 @@
+{
+  "seed": 20260614,
+  "instances": 2000,
+  "reportersPerInstance": 8,
+  "modes": [
+    {
+      "mode": "baseline",
+      "psi": 0.0,
+      "rhoEff": 3000000
+    },
+    {
+      "mode": "psi=0.05",
+      "psi": 0.05,
+      "rhoEff": 2700000
+    },
+    {
+      "mode": "psi=0.10",
+      "psi": 0.1,
+      "rhoEff": 2400000
+    },
+    {
+      "mode": "psi=0.20",
+      "psi": 0.2,
+      "rhoEff": 1800000
+    },
+    {
+      "mode": "psi=0.30",
+      "psi": 0.3,
+      "rhoEff": 1200000
+    }
+  ],
+  "measurements": {
+    "constraints": 30164,
+    "public_inputs": 34,
+    "private_inputs": 112,
+    "proof_time_ms": 2630,
+    "finalize_gas": 584313,
+    "claim_gas": 30729
+  },
+  "transcriptFields": [
+    "payout vector",
+    "claimable balances",
+    "verifier public inputs",
+    "reward finalization transaction",
+    "registered reward state"
+  ],
+  "note": "Hidden reports are logged only by this synthetic audit harness; production reports remain private."
+}

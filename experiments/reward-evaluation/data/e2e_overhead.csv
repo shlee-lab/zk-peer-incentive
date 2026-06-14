@@ -1,9 +1,9 @@
 section,metric,value,unit,source
-proof_time,MACI proof phase,124.084,seconds,full_maci_reward_anvil_latest
-proof_time,Reward proof phase,4.618,seconds,full_maci_reward_anvil_latest
+proof_time,MACI proof phase,116.318,seconds,full_maci_reward_anvil_latest
+proof_time,Reward proof phase,2.630,seconds,full_maci_reward_anvil_latest
 reward_gas,Commit seed,49899,gas,full_maci_reward_anvil_latest
 reward_gas,Register root,98837,gas,full_maci_reward_anvil_latest
 reward_gas,Reveal seed,58248,gas,full_maci_reward_anvil_latest
-reward_gas,Fund pool,47396,gas,full_maci_reward_anvil_latest
-reward_gas,Verify + finalize,557212,gas,full_maci_reward_anvil_latest
-reward_gas,Claim,30707,gas,full_maci_reward_anvil_latest
+reward_gas,Fund pool,47418,gas,full_maci_reward_anvil_latest
+reward_gas,Verify + finalize,584313,gas,full_maci_reward_anvil_latest
+reward_gas,Claim,30729,gas,full_maci_reward_anvil_latest

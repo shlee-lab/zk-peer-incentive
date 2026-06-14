@@ -36,8 +36,19 @@ function fieldElement(label) {
   return BigInt(`0x${crypto.createHash("sha256").update(label).digest("hex")}`) % FIELD_PRIME;
 }
 
-function gammaScaled(numerator, denominator, bits = 32n) {
+function probabilityScaled(numerator, denominator, bits = 32n) {
   return (BigInt(numerator) * (1n << bits)) / BigInt(denominator);
+}
+
+function normalizeLotteryMode(value) {
+  if (value === undefined || value === null) return 1n;
+  if (value === "baseline" || value === "reward_correctness") return 0n;
+  if (value === "floor_adjusted" || value === "receipt_resistance") return 1n;
+  const mode = BigInt(value);
+  if (mode !== 0n && mode !== 1n) {
+    throw new Error("lotteryMode must be 0/baseline or 1/floor_adjusted");
+  }
+  return mode;
 }
 
 function bytes32Label(label) {
@@ -113,6 +124,7 @@ function defaultStakes() {
 }
 
 function baseInputs(sidecar, attempt) {
+  const lotteryMode = normalizeLotteryMode(sidecar.lotteryMode ?? sidecar.rewardMode);
   return {
     reports: toReportArray(sidecar.reports),
     stakes: sidecar.stakes ? toBigIntArray(sidecar.stakes, "stakes") : defaultStakes(),
@@ -129,7 +141,8 @@ function baseInputs(sidecar, attempt) {
     scale: BigInt(sidecar.scale ?? 1_000),
     rhoTau: BigInt(sidecar.rhoTau ?? 3_000_000),
     rewardBudget: BigInt(sidecar.rewardBudget ?? 24_000_000),
-    gammaScaled: BigInt(sidecar.gammaScaled ?? gammaScaled(5n, 100n)),
+    lotteryMode,
+    psiScaled: BigInt(sidecar.psiScaled ?? (lotteryMode === 0n ? 0n : probabilityScaled(10n, 100n))),
   };
 }
 
@@ -148,8 +161,8 @@ async function buildVector(sidecar, attempt) {
   const payouts = allocation.payouts.map((payout) => payout.toString());
 
   const vector = {
-    version: "full-maci-sidecar-bernoulli-lottery",
-    description: "Coordinate-wise Bernoulli lottery reward vector derived from official MACI final poll reports with recipient and command-salt nonce binding.",
+    version: "full-maci-sidecar-floor-adjusted-lottery",
+    description: "Baseline or floor-adjusted Bernoulli lottery reward vector derived from official MACI final poll reports with recipient and command-salt nonce binding.",
     inputs: rewardInputs,
     seedPreimage: seed.seedPreimage.toString(),
     seedSalt: seed.seedSalt,
@@ -166,7 +179,11 @@ async function buildVector(sidecar, attempt) {
     lotteryBits: allocation.lotteryBits,
     lotteryScale: allocation.lotteryScale.toString(),
     rhoTau: allocation.rhoTau.toString(),
-    gammaScaled: allocation.gammaScaled.toString(),
+    lotteryMode: allocation.lotteryMode,
+    lotteryModeCode: allocation.lotteryModeCode.toString(),
+    psiScaled: allocation.psiScaled.toString(),
+    rhoEff: allocation.rhoEff.toString(),
+    rhoEffNumerator: allocation.rhoEffNumerator.toString(),
     upperThreshold: allocation.upperThreshold.toString(),
     drawHashes: allocation.drawHashes.map((hash) => hash.toString()),
     draws: allocation.draws.map((draw) => draw.toString()),
@@ -175,6 +192,8 @@ async function buildVector(sidecar, attempt) {
     rewardRemainders: rewardWitness.map((reward) => reward.remainder.toString()),
     rawThresholds: allocation.rawThresholds.map((threshold) => threshold.toString()),
     thresholdRemainders: allocation.thresholdRemainders.map((remainder) => remainder.toString()),
+    adjustedThresholds: allocation.adjustedThresholds.map((threshold) => threshold.toString()),
+    adjustedThresholdRemainders: allocation.adjustedThresholdRemainders.map((remainder) => remainder.toString()),
     thresholds: allocation.thresholds.map((threshold) => threshold.toString()),
     expectedPayoutNumerator: allocation.expectedPayoutNumerator.toString(),
     payouts,
@@ -192,6 +211,8 @@ async function buildVector(sidecar, attempt) {
     rewardRemainders: vector.rewardRemainders,
     rawThresholds: vector.rawThresholds,
     thresholdRemainders: vector.thresholdRemainders,
+    adjustedThresholds: vector.adjustedThresholds,
+    adjustedThresholdRemainders: vector.adjustedThresholdRemainders,
     payouts,
     recipients: inputs.recipients,
     stakes: inputs.stakes,
@@ -202,7 +223,8 @@ async function buildVector(sidecar, attempt) {
     disputeId: inputs.disputeId,
     finalStateRoot: finalState.finalStateRoot,
     rewardBudget: inputs.rewardBudget,
-    gammaScaled: inputs.gammaScaled,
+    lotteryMode: inputs.lotteryMode,
+    psiScaled: inputs.psiScaled,
     randomSeed: seed.randomSeed,
   };
 
@@ -293,6 +315,9 @@ async function main() {
     nonceSource: sidecar.nonceSource || "maci-vote-command-salt",
     randomSeed: vector.randomSeed,
     seedCommitment: vector.seedCommitment,
+    lotteryMode: vector.lotteryMode,
+    psiScaled: vector.psiScaled,
+    rhoEff: vector.rhoEff,
     reports: inputs.reports,
     lotteryWins: vector.wins,
     maciStateIndices: inputs.maciStateIndices.map((value) => value.toString()),

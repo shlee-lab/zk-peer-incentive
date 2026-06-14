@@ -463,6 +463,8 @@ describe("full MACI plus reward sidecar E2E", function test() {
       scale: "1000",
       rhoTau: "3000000",
       rewardBudget: "24000000",
+      lotteryMode: "floor_adjusted",
+      psiScaled: "429496729",
       nonceLabel: "full-maci-reward-sidecar",
     };
     const sidecarFile = path.join(OUTPUT_ROOT, "sidecar_input.json");
@@ -547,9 +549,11 @@ describe("full MACI plus reward sidecar E2E", function test() {
       reports: extractedReports,
       stakeDesign: "uniform",
       stakes: STAKES,
-      rewardMode: "coordinate-wise Bernoulli lottery",
+      rewardMode: "floor-adjusted Bernoulli lottery",
       rhoTau: "3000000",
-      gammaScaled: fixture.publicSignals[31],
+      lotteryMode: fixture.publicSignals[31],
+      psiScaled: fixture.publicSignals[32],
+      rhoEff: rewardSummary.rhoEff,
       lotteryWins: rewardSummary.lotteryWins,
       finalRewardStateRoot: fixture.finalStateRoot,
       rewardNonceSource: "maci-vote-command-salt",

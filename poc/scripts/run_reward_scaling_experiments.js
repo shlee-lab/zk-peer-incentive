@@ -23,7 +23,7 @@ const ACTIVE_COUNTS = (process.env.REWARD_SCALING_ACTIVE_COUNTS || "8,16,32,64")
   .split(",")
   .map((value) => Number(value.trim()))
   .filter((value) => Number.isInteger(value) && value > 0);
-const DEFAULT_GAMMA_SCALED = (5n * (1n << 32n)) / 100n;
+const DEFAULT_PSI_SCALED = (10n * (1n << 32n)) / 100n;
 
 function fieldElement(label) {
   return BigInt(`0x${crypto.createHash("sha256").update(label).digest("hex")}`) % FIELD_PRIME;
@@ -95,8 +95,8 @@ function makeCircuitVariant(n, depth, outDir) {
   const variant = source
     .replaceAll('../node_modules/circomlib/circuits/', '../../../node_modules/circomlib/circuits/')
     .replace(
-      /component main \{ public \[payouts, recipients, stakes, smoothing, kappa, scale, rhoTau, disputeId, finalStateRoot, rewardBudget, gammaScaled, randomSeed\] \} = RewardCheck\(8, 3, 128, 32\);/,
-      `component main { public [payouts, recipients, stakes, smoothing, kappa, scale, rhoTau, disputeId, finalStateRoot, rewardBudget, gammaScaled, randomSeed] } = RewardCheck(${n}, ${depth}, 128, 32);`
+      /component main \{ public \[payouts, recipients, stakes, smoothing, kappa, scale, rhoTau, disputeId, finalStateRoot, rewardBudget, lotteryMode, psiScaled, randomSeed\] \} = RewardCheck\(8, 3, 128, 32\);/,
+      `component main { public [payouts, recipients, stakes, smoothing, kappa, scale, rhoTau, disputeId, finalStateRoot, rewardBudget, lotteryMode, psiScaled, randomSeed] } = RewardCheck(${n}, ${depth}, 128, 32);`
     );
   const file = path.join(outDir, `reward_check_${n}.circom`);
   fs.mkdirSync(outDir, { recursive: true });
@@ -150,7 +150,8 @@ function makeInputs(maxVoters, activeVoters) {
     scale: 1_000n,
     rhoTau: 3_000_000n,
     rewardBudget: BigInt(maxVoters) * 3_000_000n,
-    gammaScaled: DEFAULT_GAMMA_SCALED,
+    lotteryMode: 1n,
+    psiScaled: DEFAULT_PSI_SCALED,
   };
 }
 
@@ -175,6 +176,8 @@ async function makeCircuitInput(inputs) {
       rewardRemainders: allocation.rewardWitness.map((reward) => reward.remainder),
       rawThresholds: allocation.rawThresholds,
       thresholdRemainders: allocation.thresholdRemainders,
+      adjustedThresholds: allocation.adjustedThresholds,
+      adjustedThresholdRemainders: allocation.adjustedThresholdRemainders,
       payouts: allocation.payouts,
       recipients: inputs.recipients,
       stakes: inputs.stakes,
@@ -185,7 +188,8 @@ async function makeCircuitInput(inputs) {
       disputeId: inputs.disputeId,
       finalStateRoot: finalState.finalStateRoot,
       rewardBudget: inputs.rewardBudget,
-      gammaScaled: inputs.gammaScaled,
+      lotteryMode: inputs.lotteryMode,
+      psiScaled: inputs.psiScaled,
       randomSeed: inputs.randomSeed,
     },
     allocation,
@@ -307,8 +311,8 @@ async function runForActiveCount(capacity, activeVoters) {
     activeVoters,
     utilization: (activeVoters / capacity.maxVoters).toFixed(6),
     merkleDepth: capacity.depth,
-    publicInputs: 3 * capacity.maxVoters + 9,
-    privateInputs: capacity.maxVoters * (9 + capacity.depth),
+    publicInputs: 3 * capacity.maxVoters + 10,
+    privateInputs: capacity.maxVoters * (11 + capacity.depth),
     constraints: capacity.r1csInfo.constraints,
     wires: capacity.r1csInfo.wires,
     labels: capacity.r1csInfo.labels,
@@ -322,7 +326,9 @@ async function runForActiveCount(capacity, activeVoters) {
     totalPayout: totalPayout.toString(),
     paidRecipientCount,
     winnerCount: allocation.wins.filter((win) => win === 1n).length,
-    gammaScaled: allocation.gammaScaled.toString(),
+    lotteryMode: allocation.lotteryMode,
+    psiScaled: allocation.psiScaled.toString(),
+    rhoEff: allocation.rhoEff.toString(),
     maxExposure: (BigInt(capacity.maxVoters) * allocation.rhoTau).toString(),
     artifactDir: path.relative(REPO_ROOT, outDir),
     verifyOutput: (verify.stdout + verify.stderr).includes("OK") ? "OK" : "unknown",
@@ -352,7 +358,8 @@ async function main() {
     activeVoterCounts: ACTIVE_COUNTS,
     ptau,
     relation: "fixed-capacity coordinate-wise Bernoulli reward circuit utilization",
-    gammaScaled: DEFAULT_GAMMA_SCALED.toString(),
+    lotteryMode: "floor_adjusted",
+    psiScaled: DEFAULT_PSI_SCALED.toString(),
     note: "Artifacts are generated under poc/artifacts/scaling and are intentionally gitignored.",
   });
   console.log(`Wrote ${path.join(DATA_DIR, "reward_scaling.csv")}`);
