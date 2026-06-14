@@ -15,6 +15,8 @@
     "experiments:reward-scaling": "node scripts/run_reward_scaling_experiments.js",
     "experiments:reward-plots": "python3 scripts/plot_reward_experiments.py",
     "experiments:reward": "npm run experiments:reward-data && npm run experiments:privacy-audit && npm run experiments:reward-scaling && npm run experiments:reward-plots",
+    "benchmark:reward-layer-scaling": "node scripts/run_reward_layer_scaling_benchmark.js && python3 scripts/plot_reward_layer_scaling.py",
+    "benchmark:reward-layer-scaling-plots": "python3 scripts/plot_reward_layer_scaling.py",
     "test:v2:circuit": "node scripts/test_v2_tamper.js",
     "test:reference": "node reference/test_reward_model.js",
     "bench:reference": "node scripts/benchmark_reference.js"

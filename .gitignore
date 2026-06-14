@@ -4,6 +4,7 @@ poc/artifacts/
 poc/cache/
 poc/out/
 poc/broadcast/
+poc/contracts/scaling_generated/
 poc/*.ptau
 poc/*.zkey
 poc/**/*.wtns

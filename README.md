@@ -173,6 +173,10 @@ capacity as predicted by `rho_eff = (1 - 2 psi) * rhoTau`.
 More data and figure notes are in
 [experiments/reward-evaluation/README.md](experiments/reward-evaluation/README.md).
 
+Reward-layer-only scaling results for `N = 8, 16, 32, 64` are under
+[results/](results/). These isolate the reward circuit and reward contracts;
+they do not claim full MACI scalability for larger `N`.
+
 ## Running Locally
 
 The reward-only Anvil flow checks the generated reward proof and reward
